@@ -276,6 +276,28 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     currentTranscriptRef.current = ''
   }, [])
 
+  // Update Whisper prompt to bias transcription toward expected line text
+  const updatePrompt = useCallback((expectedLine: string) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+
+    // Build prompt: expected line (truncated) + filler suffix
+    const truncated = expectedLine.slice(0, 200)
+    const prompt = truncated
+      ? `${truncated} Umm, let me think, hmm... mhm, uh-huh`
+      : 'Umm, let me think like, hmm... mhm, mm-hmm, uh-huh, uh, ah, er, um, hm, yeah, yea, yep, yup, nope, nah, okay, alright, mmm-hmm'
+
+    console.log('[OpenAI Realtime] Updating prompt:', prompt.slice(0, 60) + '...')
+    socket.send(JSON.stringify({
+      type: 'transcription_session.update',
+      session: {
+        input_audio_transcription: {
+          prompt,
+        },
+      },
+    }))
+  }, [])
+
   // Full disconnect
   const stopSession = useCallback(() => {
     console.log('[OpenAI Realtime] Stopping session completely...')
@@ -335,6 +357,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     startListening,  // Start sending audio (billing begins)
     pauseListening,  // Stop sending audio (billing stops, connection kept)
     stopSession,     // Full disconnect
+    updatePrompt,    // Update Whisper prompt for expected line
     startRecording,  // Start recording mic for playback
     stopRecording,   // Stop recording and get audio blob
   }

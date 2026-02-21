@@ -70,6 +70,53 @@ function jaroWinkler(s1: string, s2: string, prefixScale = 0.1): number {
 }
 
 // ============================================================================
+// LEVENSHTEIN DISTANCE
+// ============================================================================
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length
+  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i)
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0]
+    dp[0] = i
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j]
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1])
+      prev = tmp
+    }
+  }
+  return dp[n]
+}
+
+// ============================================================================
+// SOUNDEX
+// ============================================================================
+
+function soundex(word: string): string {
+  if (!word) return ''
+  const upper = word.toUpperCase()
+  const first = upper[0]
+  const map: Record<string, string> = {
+    B: '1', F: '1', P: '1', V: '1',
+    C: '2', G: '2', J: '2', K: '2', Q: '2', S: '2', X: '2', Z: '2',
+    D: '3', T: '3',
+    L: '4',
+    M: '5', N: '5',
+    R: '6',
+  }
+  let code = first
+  let prev = map[first] || '0'
+  for (let i = 1; i < upper.length && code.length < 4; i++) {
+    const digit = map[upper[i]]
+    if (digit && digit !== prev) {
+      code += digit
+    }
+    prev = digit || '0'
+  }
+  return (code + '000').slice(0, 4)
+}
+
+// ============================================================================
 // EQUIVALENTS (Only transcription-related variations, NOT acting choices)
 // ============================================================================
 
@@ -252,25 +299,42 @@ const SKIPPABLE_SCRIPT_WORDS = [
  * - Fuzzy match (Jaro-Winkler) allowed for proper nouns only
  * - Equivalents (contractions, casual speech) always allowed
  */
-function wordsMatch(expected: string, spoken: string, expectedOriginal?: string, isFirstWord: boolean = false): boolean {
+function wordsMatch(
+  expected: string,
+  spoken: string,
+  expectedOriginal?: string,
+  isFirstWord: boolean = false,
+  characterNames?: Set<string>
+): boolean {
   // Exact match
   if (expected === spoken) return true
-  
+
   // Check equivalents (contractions, abbreviations, casual speech)
   const equiv = EQUIVALENTS[expected]
   if (equiv && equiv.includes(spoken)) return true
   const equivSpoken = EQUIVALENTS[spoken]
   if (equivSpoken && equivSpoken.includes(expected)) return true
-  
-  // For proper nouns (names, places), allow fuzzy matching
-  // This handles Scribe transcribing "Robinavitch" as "Robinovich" etc.
-  if (expectedOriginal && isProperNoun(expectedOriginal, isFirstWord)) {
+
+  // Fuzzy matching for proper nouns OR known character names
+  const isName = (expectedOriginal && isProperNoun(expectedOriginal, isFirstWord)) ||
+                 (characterNames && characterNames.has(expected))
+  if (isName) {
     const similarity = jaroWinkler(expected, spoken)
-    return similarity >= 0.80 // Fuzzy threshold for names
+    if (similarity >= 0.80) return true
   }
-  
-  // For regular words, require exact match (no fuzzy)
-  // This catches mistakes like "old" vs "young", "crash" vs "crush"
+
+  // Edit distance fallback for short words (<=5 chars)
+  // Catches "hi"/"bye" won't match (dist 2), but "liv"/"live" (dist 1) will
+  if (expected.length <= 5 || spoken.length <= 5) {
+    if (levenshtein(expected, spoken) <= 1) return true
+  }
+
+  // Phonetic fallback (Soundex) for words >= 2 chars
+  // Catches homophones: "scene"/"seen", "knight"/"night"
+  if (expected.length >= 2 && spoken.length >= 2) {
+    if (soundex(expected) === soundex(spoken)) return true
+  }
+
   return false
 }
 
@@ -290,7 +354,7 @@ export interface AccuracyResult {
  * Check accuracy of spoken text vs expected script line
  * Strict matching for regular words, fuzzy only for proper nouns
  */
-export function checkAccuracy(expected: string, spoken: string, strictMode: boolean = false): AccuracyResult {
+export function checkAccuracy(expected: string, spoken: string, strictMode: boolean = false, characterNames?: Set<string>): AccuracyResult {
   // Pre-process to handle stutters/dashes in script
   const processedExpected = preprocessStutters(expected)
   const expectedWordsWithOrig = getWordsWithOriginal(processedExpected)
@@ -318,7 +382,7 @@ export function checkAccuracy(expected: string, spoken: string, strictMode: bool
     const isFirstWord = expectedIdx === 0
 
     // Skip filler words in expected that Scribe might not pick up (um, uh, mmhmm, etc.)
-    if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       // Scribe didn't pick up this filler, skip it - don't count as missing or in denominator
       expectedIdx++
       skippedCount++
@@ -327,7 +391,7 @@ export function checkAccuracy(expected: string, spoken: string, strictMode: bool
 
     // Skip repeated stutters - if this word is same as previous, user can skip it
     // e.g., "I--I am" becomes "I I am", user can say "I am" and skip the repeated "I"
-    if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       // This is a repeated word (stutter), skip it - don't count in denominator
       expectedIdx++
       skippedCount++
@@ -335,7 +399,7 @@ export function checkAccuracy(expected: string, spoken: string, strictMode: bool
     }
 
     // Direct match (strict for regular words, fuzzy for proper nouns)
-    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       matchedCount++
       expectedIdx++
       spokenIdx++
@@ -394,14 +458,14 @@ export function checkAccuracy(expected: string, spoken: string, strictMode: bool
 
     for (let i = 1; i <= lookAhead && expectedIdx + i < expectedWords.length; i++) {
       const aheadOrig = expectedWordsWithOrig[expectedIdx + i].original
-      if (wordsMatch(expectedWords[expectedIdx + i], spkWord, aheadOrig, false)) {
+      if (wordsMatch(expectedWords[expectedIdx + i], spkWord, aheadOrig, false, characterNames)) {
         foundExpectedAhead = i
         break
       }
     }
 
     for (let i = 1; i <= lookAhead && spokenIdx + i < spokenWords.length; i++) {
-      if (wordsMatch(spokenWords[spokenIdx + i], expWord, expOrig, isFirstWord)) {
+      if (wordsMatch(spokenWords[spokenIdx + i], expWord, expOrig, isFirstWord, characterNames)) {
         foundSpokenAhead = i
         break
       }
@@ -472,7 +536,7 @@ export function checkAccuracy(expected: string, spoken: string, strictMode: bool
 // REAL-TIME WORD MATCHING (for live highlighting)
 // ============================================================================
 
-export function getRealtimeWordMatch(expected: string, spoken: string): { matched: number; hasError: boolean } {
+export function getRealtimeWordMatch(expected: string, spoken: string, characterNames?: Set<string>): { matched: number; hasError: boolean } {
   // Pre-process to handle stutters/dashes in script
   const processedExpected = preprocessStutters(expected)
   const expectedWordsWithOrig = getWordsWithOriginal(processedExpected)
@@ -491,18 +555,18 @@ export function getRealtimeWordMatch(expected: string, spoken: string): { matche
     const isFirstWord = expectedIdx === 0
     
     // Skip stutters - if this expected word is same as previous, and doesn't match spoken, skip it
-    if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       expectedIdx++
       continue
     }
     
     // Skip filler words in expected
-    if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       expectedIdx++
       continue
     }
     
-    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       matched++
       expectedIdx++
       spokenIdx++
@@ -539,9 +603,10 @@ export interface LockedWordState {
  * @returns New state with updated locked words
  */
 export function getLockedWordMatch(
-  expected: string, 
+  expected: string,
   spoken: string,
-  prevState: LockedWordState | null
+  prevState: LockedWordState | null,
+  characterNames?: Set<string>
 ): LockedWordState {
   // Pre-process expected text
   const processedExpected = preprocessStutters(expected)
@@ -588,18 +653,18 @@ export function getLockedWordMatch(
     const isFirstWord = expectedIdx === 0
     
     // Skip stutters in expected
-    if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       expectedIdx++
       continue
     }
     
     // Skip filler words in expected
-    if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       expectedIdx++
       continue
     }
     
-    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       // Match! Lock this word
       lockedWords.push(spkWord)
       lockedCount++
@@ -635,7 +700,7 @@ export interface WordByWordResult {
   spokenWords: string[] // What user actually said (aligned to expected)
 }
 
-export function getWordByWordResults(expected: string, spoken: string): WordByWordResult {
+export function getWordByWordResults(expected: string, spoken: string, characterNames?: Set<string>): WordByWordResult {
   const processedExpected = preprocessStutters(expected)
   const expectedWordsWithOrig = getWordsWithOriginal(processedExpected)
   const expectedWords = expectedWordsWithOrig.map(w => w.normalized)
@@ -655,7 +720,7 @@ export function getWordByWordResults(expected: string, spoken: string): WordByWo
     // Skip stutters in expected
     if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1]) {
       // This is a stutter repeat - mark as correct if we're past it
-      if (spokenIdx > 0 || (spokenIdx < spokenWords.length && wordsMatch(expWord, spokenWords[spokenIdx], expOrig, isFirstWord))) {
+      if (spokenIdx > 0 || (spokenIdx < spokenWords.length && wordsMatch(expWord, spokenWords[spokenIdx], expOrig, isFirstWord, characterNames))) {
         results.push('correct')
         alignedSpoken.push(expWord) // Use expected word for stutters
         expectedIdx++
@@ -665,7 +730,7 @@ export function getWordByWordResults(expected: string, spoken: string): WordByWo
     
     // Skip filler words in expected that might not be transcribed
     if (SKIPPABLE_SCRIPT_WORDS.includes(expWord)) {
-      if (spokenIdx < spokenWords.length && wordsMatch(expWord, spokenWords[spokenIdx], expOrig, isFirstWord)) {
+      if (spokenIdx < spokenWords.length && wordsMatch(expWord, spokenWords[spokenIdx], expOrig, isFirstWord, characterNames)) {
         // User said the filler
         results.push('correct')
         alignedSpoken.push(spokenWords[spokenIdx])
@@ -690,7 +755,7 @@ export function getWordByWordResults(expected: string, spoken: string): WordByWo
     const spkWord = spokenWords[spokenIdx]
     
     // Check for match
-    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
+    if (wordsMatch(expWord, spkWord, expOrig, isFirstWord, characterNames)) {
       results.push('correct')
       alignedSpoken.push(spkWord)
       expectedIdx++

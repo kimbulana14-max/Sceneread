@@ -26,7 +26,7 @@ export async function GET() {
                 rate: 24000,
               },
               transcription: {
-                model: 'whisper-1',
+                model: 'gpt-4o-transcribe',
                 prompt: 'Umm, let me think like, hmm... mhm, mm-hmm, uh-huh, uh, ah, er, um, hm, yeah, yea, yep, yup, nope, nah, okay, alright, mmm-hmm',
                 language: 'en',
               },

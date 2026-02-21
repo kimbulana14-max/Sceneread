@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, PanInfo } from 'framer-motion'
 import { useStore, useSettings, useScriptPractice } from '@/store'
 import { checkAccuracy, getLockedWordMatch, createFreshLockedState, LockedWordState, getWordByWordResults } from '@/lib/accuracy'
@@ -227,6 +227,16 @@ export function PracticeScreen() {
   const randomQueuePosRef = useRef<number>(0) // Current position in random queue
   const pendingRandomUserLineRef = useRef<number | null>(null) // Prevents double-random-jump after cue
   
+  // Compute character names set for fuzzy matching (always-on for known names)
+  const characterNameSet = useMemo(() => {
+    const names = new Set<string>()
+    characters.forEach(c => {
+      const parts = c.name.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/)
+      parts.forEach(p => { if (p.length >= 2) names.add(p) })
+    })
+    return names
+  }, [characters])
+
   // OpenAI Realtime - STT with filler word support
   const openaiRealtime = useOpenAIRealtime({
     onPartialTranscript: (data) => {
@@ -257,7 +267,7 @@ export function PracticeScreen() {
       lastSpeechRef.current = Date.now()
       
       // Use word-locking to prevent STT from "changing" already-matched words
-      const newState = getLockedWordMatch(expectedLineRef.current, fullText, lockedStateRef.current)
+      const newState = getLockedWordMatch(expectedLineRef.current, fullText, lockedStateRef.current, characterNameSet)
       lockedStateRef.current = newState
       console.log('[STT] Word match - locked:', newState.lockedCount, 'hasError:', newState.hasError, 'expected:', expectedLineRef.current)
       setMatchedWordCount(newState.lockedCount)
@@ -278,7 +288,7 @@ export function PracticeScreen() {
       lastSpeechRef.current = Date.now()
       
       // Update word-locking state with committed text
-      const newState = getLockedWordMatch(expectedLineRef.current, committedTextRef.current, lockedStateRef.current)
+      const newState = getLockedWordMatch(expectedLineRef.current, committedTextRef.current, lockedStateRef.current, characterNameSet)
       lockedStateRef.current = newState
       setMatchedWordCount(newState.lockedCount)
       setHasError(newState.hasError)
@@ -1433,6 +1443,9 @@ export function PracticeScreen() {
     setStatus('listening')
     if (settings.playYourTurnCue) playYourTurn()
 
+    // Update Whisper prompt to bias toward expected line
+    openaiRealtime.updatePrompt(expectedLineRef.current)
+
     // CRITICAL: Start sending audio to OpenAI (billing starts here)
     // If connection died, reconnect first
     let started = openaiRealtime.startListening()
@@ -1534,6 +1547,9 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
+    // Update Whisper prompt to bias toward expected line
+    openaiRealtime.updatePrompt(expectedLineRef.current)
+
     // CRITICAL: Start sending audio to OpenAI (billing starts here)
     // If connection died, reconnect first
     let started = openaiRealtime.startListening()
@@ -1580,10 +1596,13 @@ export function PracticeScreen() {
     accumulatedAudioRef.current = 0
     setAnimatedWordIndex(0)
     setWordResults([])
-    listeningRef.current = true; 
+    listeningRef.current = true;
     lastSpeechRef.current = Date.now();
     setStatus('listening');
-    
+
+    // Update Whisper prompt to bias toward expected line
+    openaiRealtime.updatePrompt(expectedLineRef.current)
+
     // CRITICAL: Start sending audio to OpenAI (billing starts here)
     // If connection died, reconnect first
     let started = openaiRealtime.startListening()
@@ -1598,7 +1617,7 @@ export function PracticeScreen() {
         return
       }
     }
-    
+
     // Silence timer - evaluate after 1.0s of silence
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
@@ -1658,7 +1677,7 @@ export function PracticeScreen() {
       
       // Get word-by-word results even for empty transcript (all words will be "missing")
       if (expectedLineRef.current) {
-        const wordByWord = getWordByWordResults(expectedLineRef.current, spoken || '')
+        const wordByWord = getWordByWordResults(expectedLineRef.current, spoken || '', characterNameSet)
         setWordResults(wordByWord.results)
       }
       
@@ -1707,7 +1726,7 @@ export function PracticeScreen() {
       return 
     }
     
-    const result = checkAccuracy(expectedLineRef.current, spoken, settings.strictMode)
+    const result = checkAccuracy(expectedLineRef.current, spoken, settings.strictMode, characterNameSet)
     setTranscript(spoken)
     setMissingWords(result.missingWords)
     setWrongWords(result.wrongWords)
@@ -1829,7 +1848,7 @@ export function PracticeScreen() {
       if (scriptId) recordAttempt(scriptId, false)
       
       // Get word-by-word results for visual feedback
-      const wordByWord = getWordByWordResults(expectedLineRef.current, spoken)
+      const wordByWord = getWordByWordResults(expectedLineRef.current, spoken, characterNameSet)
       setWordResults(wordByWord.results)
       
       // Show error popup with what they got wrong
