@@ -23,7 +23,47 @@
   --success: #10B981;
   --success-muted: rgba(16,185,129,0.12);
   --warning: #F59E0B;
+  --warning-muted: rgba(245,158,11,0.12);
   --error: #EF4444;
+  --error-muted: rgba(239,68,68,0.12);
+  --overlay-2: rgba(255,255,255,0.02);
+  --overlay-5: rgba(255,255,255,0.05);
+  --overlay-10: rgba(255,255,255,0.10);
+  --overlay-20: rgba(255,255,255,0.20);
+  --overlay-40: rgba(255,255,255,0.40);
+  --glass-bg: rgba(20,20,24,0.8);
+}
+
+[data-theme="light"] {
+  --bg: #faf8f4;
+  --bg-elevated: #f5f1eb;
+  --bg-surface: #f0ece4;
+  --bg-surface-hover: #e8e2d9;
+  --bg-subtle: #e8e2d9;
+  --border: #e8e2d9;
+  --border-hover: #d4ccc0;
+  --text: #1a1a1a;
+  --text-secondary: #555555;
+  --text-muted: #999999;
+  --text-subtle: #bbbbbb;
+  --accent: #B87333;
+  --accent-muted: rgba(184,115,51,0.10);
+  --accent-border: rgba(184,115,51,0.25);
+  --ai: #7a9e93;
+  --ai-muted: rgba(122,158,147,0.10);
+  --ai-border: rgba(122,158,147,0.20);
+  --success: #858E62;
+  --success-muted: rgba(133,142,98,0.10);
+  --warning: #c5a55a;
+  --warning-muted: rgba(197,165,90,0.10);
+  --error: #c0392b;
+  --error-muted: rgba(192,57,43,0.10);
+  --overlay-2: rgba(0,0,0,0.02);
+  --overlay-5: rgba(0,0,0,0.03);
+  --overlay-10: rgba(0,0,0,0.05);
+  --overlay-20: rgba(0,0,0,0.08);
+  --overlay-40: rgba(0,0,0,0.15);
+  --glass-bg: rgba(250,248,244,0.85);
 }
 
 * {
@@ -64,6 +104,11 @@ html, body {
   color: white;
 }
 
+[data-theme="light"] ::selection {
+  background: var(--accent);
+  color: white;
+}
+
 /* Focus styles */
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -83,22 +128,22 @@ textarea::placeholder {
 }
 
 @keyframes slideUp {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(20px);
   }
-  to { 
+  to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
 @keyframes slideDown {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(-20px);
   }
-  to { 
+  to {
     opacity: 1;
     transform: translateY(0);
   }
@@ -115,11 +160,11 @@ textarea::placeholder {
 }
 
 @keyframes recording-pulse {
-  0%, 100% { 
-    box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7);
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--accent-muted);
   }
-  50% { 
-    box-shadow: 0 0 0 15px rgba(225, 29, 72, 0);
+  50% {
+    box-shadow: 0 0 0 15px transparent;
   }
 }
 
@@ -146,7 +191,7 @@ textarea::placeholder {
 
 /* Glass effect */
 .glass {
-  background: rgba(20, 20, 24, 0.8);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }

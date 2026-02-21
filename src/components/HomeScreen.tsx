@@ -250,7 +250,7 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
   const daysWithPractice = miniHeatmap.filter(d => d.count > 0).length
 
   const getHeatmapColor = (count: number) => {
-    if (count === 0) return 'bg-white/5'
+    if (count === 0) return 'bg-overlay-5'
     if (count < 5) return 'bg-accent/30'
     if (count < 15) return 'bg-accent/50'
     if (count < 30) return 'bg-accent/70'
@@ -335,7 +335,7 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                     ? 'bg-accent' 
                     : i === 6 
                       ? 'border border-dashed border-accent/50 bg-transparent' 
-                      : 'bg-white/10'
+                      : 'bg-overlay-10'
                 }`}
                 title={`${day.date.toLocaleDateString('en', { weekday: 'short' })}: ${day.count} lines`}
               />
@@ -381,10 +381,10 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
           <h2 className="text-xs font-medium text-text-muted mb-2">Continue Practicing</h2>
           <div className="w-full p-4 bg-bg-surface rounded-xl border border-border animate-pulse">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-white/5" />
+              <div className="w-14 h-14 rounded-xl bg-overlay-5" />
               <div className="flex-1">
-                <div className="h-4 bg-white/5 rounded w-3/4 mb-2" />
-                <div className="h-3 bg-white/5 rounded w-1/2" />
+                <div className="h-4 bg-overlay-5 rounded w-3/4 mb-2" />
+                <div className="h-3 bg-overlay-5 rounded w-1/2" />
               </div>
             </div>
           </div>

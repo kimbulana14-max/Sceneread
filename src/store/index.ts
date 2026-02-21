@@ -34,6 +34,7 @@ export interface PracticeSettings {
   repeatFullLineOnFail: boolean // Repeat the full line (not segment) on fail
   randomOrder: boolean // Shuffle user lines for memorization training
   partnerSpeedVariation: boolean // Randomly vary AI partner's speaking speed
+  colorTheme: 'dark' | 'light'
 }
 
 // === PER-SCRIPT PRACTICE STATE ===
@@ -214,6 +215,7 @@ export const defaultSettings: PracticeSettings = {
   repeatFullLineOnFail: false,
   randomOrder: false,
   partnerSpeedVariation: false,
+  colorTheme: 'dark',
 }
 
 const defaultScriptState = (scriptId: string): ScriptPracticeState => ({

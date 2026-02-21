@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
+import { useSettings } from '@/store'
 
 interface WelcomeSplashProps {
   name?: string
@@ -10,7 +11,9 @@ interface WelcomeSplashProps {
 
 export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
   const [phase, setPhase] = useState<'enter' | 'hold' | 'exit'>('enter')
-  
+  const colorTheme = useSettings((s) => s.settings.colorTheme)
+  const isLight = colorTheme === 'light'
+
   const firstName = name?.split(' ')[0] || 'Actor'
   
   // Motivational phrases
@@ -67,13 +70,13 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
         }}
         className="relative mb-8"
       >
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-bg-elevated to-bg flex items-center justify-center shadow-lg shadow-accent/30 border border-white/5">
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-bg-elevated to-bg flex items-center justify-center shadow-lg shadow-accent/30 border border-overlay-5">
           <svg className="w-12 h-12" viewBox="0 0 512 512" fill="none">
             <defs>
               <linearGradient id="splashAccent" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#FB7185"/>
-                <stop offset="50%" stopColor="#E11D48"/>
-                <stop offset="100%" stopColor="#BE123C"/>
+                <stop offset="0%" stopColor={isLight ? "#C48B5C" : "#FB7185"}/>
+                <stop offset="50%" stopColor={isLight ? "#B87333" : "#E11D48"}/>
+                <stop offset="100%" stopColor={isLight ? "#9A5F28" : "#BE123C"}/>
               </linearGradient>
             </defs>
             <path

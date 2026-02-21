@@ -371,7 +371,7 @@ export function LibraryScreen() {
           {search && (
             <button 
               onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 text-text-muted"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-overlay-10 text-text-muted"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
@@ -445,7 +445,7 @@ export function LibraryScreen() {
                           handleSelectScript(script)
                         }
                       }}
-                      className="relative bg-bg-elevated border border-white/5 rounded-xl p-4 cursor-pointer"
+                      className="relative bg-bg-elevated border border-overlay-5 rounded-xl p-4 cursor-pointer"
                     >
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex-1 min-w-0">
@@ -467,7 +467,7 @@ export function LibraryScreen() {
                               e.stopPropagation()
                               setSwipedScriptId(isSwiped ? null : script.id)
                             }}
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:bg-white/5 transition-colors"
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:bg-overlay-5 transition-colors"
                           >
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
@@ -492,7 +492,7 @@ export function LibraryScreen() {
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-white/5">
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-overlay-5">
                               <button
                                 onClick={(e) => { e.stopPropagation(); setVoiceSetupScript(script); setSwipedScriptId(null); }}
                                 className="flex-1 py-2.5 rounded-lg bg-bg-surface flex items-center justify-center gap-2 text-sm text-text-muted hover:text-accent transition-colors"
@@ -567,7 +567,7 @@ export function LibraryScreen() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-bg-elevated rounded-xl p-6 border border-white/5"
+              className="w-full max-w-sm bg-bg-elevated rounded-xl p-6 border border-overlay-5"
             >
               <div className="w-12 h-12 rounded-full bg-error/20 flex items-center justify-center mx-auto mb-4">
                 <svg className="w-6 h-6 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -967,7 +967,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
           exit={{ opacity: 0, scale: 0.9 }}
           className="absolute inset-0 flex items-center justify-center p-6"
         >
-          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-white/10 overflow-hidden">
+          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-overlay-10 overflow-hidden">
             {/* Header with checkmark */}
             <div className="relative h-20 bg-gradient-to-br from-accent/20 to-transparent flex items-center justify-center">
               <motion.div
@@ -1048,7 +1048,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
           animate={{ opacity: 1, scale: 1 }}
           className="absolute inset-0 flex items-center justify-center p-6"
         >
-          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-white/10 p-6">
+          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-overlay-10 p-6">
             <div className="flex flex-col items-center">
               {/* Animated rings */}
               <div className="relative w-20 h-20 mb-5">
@@ -1107,7 +1107,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
             <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
               <button
                 onClick={onClose}
-                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors"
+                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-overlay-5 transition-colors"
               >
                 <svg className="w-6 h-6 text-text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1137,7 +1137,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:bg-white/5 transition-all hover:border-accent"
+                    className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:bg-overlay-5 transition-all hover:border-accent"
                   >
                     <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-accent/10 flex items-center justify-center">
                       <IconUpload size={24} className="text-accent" />
@@ -1246,7 +1246,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
             <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
               <button
                 onClick={() => setStep('choose')}
-                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors"
+                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-overlay-5 transition-colors"
               >
                 <svg className="w-6 h-6 text-text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1291,7 +1291,7 @@ No, she hasn't been in yet."
             <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
               <button
                 onClick={() => setStep(selectedFile ? 'choose' : 'text')}
-                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors"
+                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-overlay-5 transition-colors"
               >
                 <svg className="w-6 h-6 text-text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1656,7 +1656,7 @@ function VoiceSetupModal({ script, onClose }: { script: Script; onClose: () => v
         <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors"
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-overlay-5 transition-colors"
           >
             <svg className="w-6 h-6 text-text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

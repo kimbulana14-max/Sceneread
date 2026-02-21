@@ -101,7 +101,7 @@ export function EditModal({ isOpen, onClose, type, data, onSave, onDelete, onAdd
           <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
             <button
               onClick={onClose}
-              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors"
+              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-overlay-5 transition-colors"
             >
               <svg className="w-6 h-6 text-text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

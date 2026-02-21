@@ -1889,7 +1889,7 @@ export default function RecordScreen() {
                           e.stopPropagation()
                           setActiveRecordingMenu(activeRecordingMenu === recording.id ? null : recording.id)
                         }}
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-text-muted flex-shrink-0"
+                        className="p-1.5 rounded-lg hover:bg-overlay-10 text-text-muted flex-shrink-0"
                       >
                         <Icons.MoreVertical size={18} />
                       </button>
@@ -1905,21 +1905,21 @@ export default function RecordScreen() {
                           >
                             <button
                               onClick={() => setSelectedRecordingForPreview(recording)}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-white/5 flex items-center gap-3"
+                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-overlay-5 flex items-center gap-3"
                             >
                               <Icons.Play size={16} />
                               Play
                             </button>
                             <button
                               onClick={() => toggleSavedRecordingFavorite(recording.id)}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-white/5 flex items-center gap-3"
+                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-overlay-5 flex items-center gap-3"
                             >
                               <Icons.Star size={16} filled={recording.is_favorite} />
                               {recording.is_favorite ? 'Remove Favorite' : 'Add to Favorites'}
                             </button>
                             <button
                               onClick={() => downloadSavedRecording(recording)}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-white/5 flex items-center gap-3"
+                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-overlay-5 flex items-center gap-3"
                             >
                               <Icons.Download size={16} />
                               Download
@@ -1931,7 +1931,7 @@ export default function RecordScreen() {
                                   deleteSavedRecording(recording.id)
                                 }
                               }}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-white/5 flex items-center gap-3 text-error"
+                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-overlay-5 flex items-center gap-3 text-error"
                             >
                               <Icons.Trash size={16} />
                               Delete
@@ -2062,7 +2062,7 @@ export default function RecordScreen() {
                   </div>
                   <button
                     onClick={() => setSelectedRecordingForPreview(null)}
-                    className="p-2 rounded-lg hover:bg-white/10"
+                    className="p-2 rounded-lg hover:bg-overlay-10"
                   >
                     <Icons.X />
                   </button>
@@ -2101,13 +2101,13 @@ export default function RecordScreen() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleSavedRecordingFavorite(selectedRecordingForPreview.id)}
-                      className={`p-2 rounded-lg hover:bg-white/10 ${selectedRecordingForPreview.is_favorite ? 'text-warning' : 'text-text-muted'}`}
+                      className={`p-2 rounded-lg hover:bg-overlay-10 ${selectedRecordingForPreview.is_favorite ? 'text-warning' : 'text-text-muted'}`}
                     >
                       <Icons.Star filled={selectedRecordingForPreview.is_favorite} />
                     </button>
                     <button
                       onClick={() => downloadSavedRecording(selectedRecordingForPreview)}
-                      className="p-2 rounded-lg hover:bg-white/10 text-text-muted"
+                      className="p-2 rounded-lg hover:bg-overlay-10 text-text-muted"
                     >
                       <Icons.Download />
                     </button>
@@ -2119,7 +2119,7 @@ export default function RecordScreen() {
                         setSelectedRecordingForPreview(null)
                       }
                     }}
-                    className="p-2 rounded-lg hover:bg-white/10 text-error"
+                    className="p-2 rounded-lg hover:bg-overlay-10 text-error"
                   >
                     <Icons.Trash />
                   </button>
@@ -2299,7 +2299,7 @@ export default function RecordScreen() {
             <span className="text-sm text-white/70">Teleprompter</span>
             <button 
               onClick={() => setTeleprompterSettings(s => ({ ...s, position: 'bottom' }))}
-              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-overlay-20 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

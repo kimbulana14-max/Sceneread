@@ -2213,7 +2213,7 @@ export function PracticeScreen() {
               <button 
                 onClick={goToPrevScene}
                 disabled={currentSceneIndex === 0}
-                className={`p-1.5 rounded-full transition-all ${currentSceneIndex === 0 ? 'opacity-20' : 'hover:bg-white/10 text-text-muted hover:text-text'}`}
+                className={`p-1.5 rounded-full transition-all ${currentSceneIndex === 0 ? 'opacity-20' : 'hover:bg-overlay-10 text-text-muted hover:text-text'}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -2243,7 +2243,7 @@ export function PracticeScreen() {
               <button 
                 onClick={goToNextScene}
                 disabled={currentSceneIndex === scriptScenes.length - 1}
-                className={`p-1.5 rounded-full transition-all ${currentSceneIndex === scriptScenes.length - 1 ? 'opacity-20' : 'hover:bg-white/10 text-text-muted hover:text-text'}`}
+                className={`p-1.5 rounded-full transition-all ${currentSceneIndex === scriptScenes.length - 1 ? 'opacity-20' : 'hover:bg-overlay-10 text-text-muted hover:text-text'}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -2283,7 +2283,7 @@ export function PracticeScreen() {
               <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
                 <button
                   onClick={() => setShowSettings(false)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors"
+                  className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-overlay-5 transition-colors"
                 >
                   <svg className="w-6 h-6 text-text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -2406,7 +2406,7 @@ export function PracticeScreen() {
                         <button 
                           key={m} 
                           onClick={() => setDirectionsMode(m)} 
-                          className={`flex-1 py-2.5 rounded-lg text-sm font-medium ${directionsMode === m ? 'bg-white/10 text-text' : 'text-text-muted'}`}
+                          className={`flex-1 py-2.5 rounded-lg text-sm font-medium ${directionsMode === m ? 'bg-overlay-10 text-text' : 'text-text-muted'}`}
                         >
                           {m.charAt(0).toUpperCase() + m.slice(1)}
                         </button>
@@ -2712,12 +2712,12 @@ export function PracticeScreen() {
               >
                 <div 
                   onClick={() => canInteract && goTo(i, true)}
-                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/15 text-ai ring-1 ring-ai/30' : 'bg-white/5 text-text-muted'}`}
+                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/15 text-ai ring-1 ring-ai/30' : 'bg-overlay-5 text-text-muted'}`}
                 >
                   {line.content}
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: line, mode: 'edit' }) }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 text-text-muted hover:text-text opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-text opacity-0 group-hover:opacity-100 transition-opacity"
                     title="Edit"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -2765,7 +2765,7 @@ export function PracticeScreen() {
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`text-xs font-bold ${isUser ? 'text-accent' : 'text-ai'}`}>{line.character_name}</span>
                   {isDone && <IconCheck size={10} className="text-success" />}
-                  {charVoice?.voice_name && <span className="text-[10px] text-text-subtle px-1 py-0.5 bg-white/5 rounded">{charVoice.voice_name}</span>}
+                  {charVoice?.voice_name && <span className="text-[10px] text-text-subtle px-1 py-0.5 bg-overlay-5 rounded">{charVoice.voice_name}</span>}
                   {(line.parenthetical || line.delivery_note) && <span className="text-[10px] text-warning/80 italic">({line.parenthetical || line.delivery_note})</span>}
                   {line.notes && <span className="text-[10px] text-ai font-medium">•</span>}
                   
@@ -2783,14 +2783,14 @@ export function PracticeScreen() {
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: line, mode: 'edit' }); setSelectedLineId(null) }}
-                      className="p-1 rounded hover:bg-white/10 text-text-muted hover:text-text"
+                      className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-text"
                       title="Edit line"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: { ...line, afterLineId: line.id, script_id: line.script_id, scene_id: line.scene_id, sort_order: line.sort_order + 1 }, mode: 'add' }); setSelectedLineId(null) }}
-                      className="p-1 rounded hover:bg-white/10 text-text-muted hover:text-success"
+                      className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-success"
                       title="Add line after"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -3023,7 +3023,7 @@ export function PracticeScreen() {
                       <div 
                         key={i} 
                         className={`flex-1 h-2 rounded-full ${
-                          i < lastCheckpoint ? 'bg-success' : 'bg-white/10'
+                          i < lastCheckpoint ? 'bg-success' : 'bg-overlay-10'
                         }`} 
                       />
                     ))}
@@ -3082,7 +3082,7 @@ export function PracticeScreen() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className="w-full max-w-sm bg-bg-elevated rounded-xl border border-white/10 overflow-hidden"
+              className="w-full max-w-sm bg-bg-elevated rounded-xl border border-overlay-10 overflow-hidden"
             >
               <div className="p-6 text-center">
                 <div className="text-sm text-text-muted mb-2">Scene Complete</div>
@@ -3179,7 +3179,7 @@ export function PracticeScreen() {
         
         {/* Segment progress bar - only show in repeat mode with segments */}
         {learningMode === 'repeat' && segments.length > 0 && currentLine?.is_user_line && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-surface/90 backdrop-blur border border-white/10">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-surface/90 backdrop-blur border border-overlay-10">
             <span className="text-[10px] text-text-muted whitespace-nowrap">
               {currentSegmentIndex + 1}/{segments.length}
             </span>
@@ -3190,7 +3190,7 @@ export function PracticeScreen() {
                   className={`w-4 h-1 rounded-full transition-colors ${
                     i < buildProgress ? 'bg-success' : 
                     i === currentSegmentIndex ? 'bg-accent' : 
-                    'bg-white/20'
+                    'bg-overlay-20'
                   }`} 
                 />
               ))}

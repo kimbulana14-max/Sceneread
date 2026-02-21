@@ -555,7 +555,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.8, 0.8, 0], y: ['0vh', '-35vh', '-75vh', '-100vh'] }}
             transition={{ duration: 9, repeat: Infinity, ease: 'easeOut', delay: 2 }}
-            className="absolute top-[100%] left-[45%] w-0.5 h-0.5 bg-white rounded-full shadow-[0_0_6px_2px_rgba(255,255,255,0.4)]"
+            className="absolute top-[100%] left-[45%] w-0.5 h-0.5 bg-text rounded-full opacity-80"
           />
           <motion.div
             animate={{ opacity: [0, 1, 1, 0], y: ['0vh', '-40vh', '-80vh', '-100vh'] }}
@@ -565,7 +565,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.6, 0.6, 0], y: ['0vh', '-30vh', '-65vh', '-100vh'] }}
             transition={{ duration: 7, repeat: Infinity, ease: 'easeOut', delay: 1.5 }}
-            className="absolute top-[100%] left-[25%] w-0.5 h-0.5 bg-white/80 rounded-full shadow-[0_0_4px_1px_rgba(255,255,255,0.5)]"
+            className="absolute top-[100%] left-[25%] w-0.5 h-0.5 bg-text rounded-full opacity-60"
           />
           <motion.div
             animate={{ opacity: [0, 0.9, 0.9, 0], y: ['0vh', '-45vh', '-85vh', '-100vh'] }}
@@ -575,7 +575,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.7, 0.7, 0], y: ['0vh', '-35vh', '-70vh', '-100vh'] }}
             transition={{ duration: 8.5, repeat: Infinity, ease: 'easeOut', delay: 2.5 }}
-            className="absolute top-[100%] left-[15%] w-1 h-1 bg-white/70 rounded-full shadow-[0_0_6px_2px_rgba(255,255,255,0.4)]"
+            className="absolute top-[100%] left-[15%] w-1 h-1 bg-text rounded-full opacity-50"
           />
           <motion.div
             animate={{ opacity: [0, 1, 1, 0], y: ['0vh', '-50vh', '-90vh', '-100vh'] }}
@@ -585,7 +585,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.8, 0.8, 0], y: ['0vh', '-40vh', '-75vh', '-100vh'] }}
             transition={{ duration: 7.5, repeat: Infinity, ease: 'easeOut', delay: 0.8 }}
-            className="absolute top-[100%] left-[60%] w-0.5 h-0.5 bg-white rounded-full shadow-[0_0_5px_2px_rgba(255,255,255,0.5)]"
+            className="absolute top-[100%] left-[60%] w-0.5 h-0.5 bg-text rounded-full opacity-80"
           />
           <motion.div
             animate={{ opacity: [0, 0.9, 0.9, 0], y: ['0vh', '-45vh', '-80vh', '-100vh'] }}
@@ -595,7 +595,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.6, 0.6, 0], y: ['0vh', '-30vh', '-60vh', '-100vh'] }}
             transition={{ duration: 8, repeat: Infinity, ease: 'easeOut', delay: 1.2 }}
-            className="absolute top-[100%] left-[92%] w-0.5 h-0.5 bg-white/80 rounded-full shadow-[0_0_4px_1px_rgba(255,255,255,0.4)]"
+            className="absolute top-[100%] left-[92%] w-0.5 h-0.5 bg-text rounded-full opacity-60"
           />
           <motion.div
             animate={{ opacity: [0, 1, 1, 0], y: ['0vh', '-55vh', '-95vh', '-100vh'] }}
@@ -610,7 +610,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.8, 0.8, 0], y: ['0vh', '-40vh', '-78vh', '-100vh'] }}
             transition={{ duration: 10, repeat: Infinity, ease: 'easeOut', delay: 1.9 }}
-            className="absolute top-[100%] left-[20%] w-1 h-1 bg-white/60 rounded-full shadow-[0_0_6px_2px_rgba(255,255,255,0.3)]"
+            className="absolute top-[100%] left-[20%] w-1 h-1 bg-text rounded-full opacity-40"
           />
           <motion.div
             animate={{ opacity: [0, 0.9, 0.9, 0], y: ['0vh', '-42vh', '-82vh', '-100vh'] }}
@@ -620,7 +620,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.5, 0.5, 0], y: ['0vh', '-25vh', '-55vh', '-100vh'] }}
             transition={{ duration: 6.5, repeat: Infinity, ease: 'easeOut', delay: 3.2 }}
-            className="absolute top-[100%] left-[40%] w-0.5 h-0.5 bg-white rounded-full shadow-[0_0_4px_1px_rgba(255,255,255,0.5)]"
+            className="absolute top-[100%] left-[40%] w-0.5 h-0.5 bg-text rounded-full opacity-70"
           />
           <motion.div
             animate={{ opacity: [0, 1, 1, 0], y: ['0vh', '-48vh', '-88vh', '-100vh'] }}
@@ -640,7 +640,7 @@ export default function Home() {
           <motion.div
             animate={{ opacity: [0, 0.6, 0.6, 0], y: ['0vh', '-28vh', '-62vh', '-100vh'] }}
             transition={{ duration: 7.8, repeat: Infinity, ease: 'easeOut', delay: 4 }}
-            className="absolute top-[100%] left-[82%] w-0.5 h-0.5 bg-white/70 rounded-full shadow-[0_0_5px_2px_rgba(255,255,255,0.4)]"
+            className="absolute top-[100%] left-[82%] w-0.5 h-0.5 bg-text rounded-full opacity-50"
           />
         </div>
         
@@ -683,7 +683,7 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.4 }}
-                  className="absolute inset-0 px-5 py-5 rounded-2xl bg-bg-surface/60 backdrop-blur-xl border border-white/[0.08]"
+                  className="absolute inset-0 px-5 py-5 rounded-2xl bg-bg-surface/60 backdrop-blur-xl border border-overlay-5"
                 >
                   <div className="flex flex-col items-center text-center gap-3 h-full justify-center">
                     <div className="w-9 h-9 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
@@ -708,7 +708,7 @@ export default function Home() {
                   key={i}
                   onClick={() => setActiveFeature(i)}
                   className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                    i === activeFeature ? 'bg-accent' : 'bg-white/20'
+                    i === activeFeature ? 'bg-accent' : 'bg-overlay-20'
                   }`}
                 />
               ))}
