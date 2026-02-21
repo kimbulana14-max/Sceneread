@@ -1155,13 +1155,12 @@ export function PracticeScreen() {
           targetDurationRef.current = (audioRef.current.duration / audioRate) * 1000
         }
         await audioRef.current.play();
-        // Wait for audio to end, with safety timeout (mobile can pause audio when backgrounded)
+        // Wait for audio to end, with safety timeout in case onended never fires
         const duration = audioRef.current.duration || 30
         await new Promise<void>(r => {
           if (!audioRef.current) return r()
           const safetyTimeout = setTimeout(r, (duration * 1000 / (audioRef.current.playbackRate || 1)) + 5000)
           audioRef.current.onended = () => { clearTimeout(safetyTimeout); r() }
-          audioRef.current.onpause = () => { clearTimeout(safetyTimeout); r() }
         });
       } catch (e) {
         console.warn('Audio playback error:', e);
@@ -1649,13 +1648,9 @@ export function PracticeScreen() {
         console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
         finishListeningRef.current()
       } else if (silenceMs > 15000 && !hasTranscript) {
-        // Emergency: 15s with no speech at all — STT may be dead, reset gracefully
-        console.warn('[STT] 15s no-speech timeout — resetting')
-        if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
-        listeningRef.current = false
-        deepgram.pauseListening()
-        setStatus('idle')
-        busyRef.current = false
+        // Emergency: 15s with no speech — evaluate as empty (triggers 'wrong' flow)
+        console.warn('[STT] 15s no-speech timeout — evaluating empty')
+        finishListeningRef.current()
       }
     }, 250)
   }
