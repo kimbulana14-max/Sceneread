@@ -45,6 +45,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
   const sendingAudioRef = useRef(false)
   const isConnectedRef = useRef(false) // Ref-based connection state (no stale closures)
   const keytermsRef = useRef<string[]>([]) // Current keyterms for reconnect
+  const keepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Self-record playback: MediaRecorder captures mic audio alongside STT
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -53,10 +54,34 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
   // Accumulated partial text between finals
   const partialAccumRef = useRef('')
 
+  // KeepAlive: Deepgram closes idle sockets after ~10s of no audio.
+  // During AI line playback we don't send audio, so we must send KeepAlive
+  // messages to prevent the socket from closing.
+  const startKeepAlive = useCallback(() => {
+    if (keepAliveRef.current) clearInterval(keepAliveRef.current)
+    keepAliveRef.current = setInterval(() => {
+      const sock = socketRef.current
+      if (!sock || sock.readyState !== WebSocket.OPEN) return
+      // Only send KeepAlive when NOT actively sending audio
+      if (sendingAudioRef.current) return
+      try {
+        sock.send(JSON.stringify({ type: 'KeepAlive' }))
+      } catch (_) { /* socket may have just closed */ }
+    }, 8000) // Every 8s (Deepgram idle timeout is ~10s)
+  }, [])
+
+  const stopKeepAlive = useCallback(() => {
+    if (keepAliveRef.current) {
+      clearInterval(keepAliveRef.current)
+      keepAliveRef.current = null
+    }
+  }, [])
+
   const cleanup = useCallback(() => {
     console.log('[Deepgram] Cleanup called')
     sendingAudioRef.current = false
     isConnectedRef.current = false
+    stopKeepAlive()
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
       mediaRecorderRef.current = null
@@ -80,7 +105,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
     }
     setIsConnected(false)
     setIsListening(false)
-  }, [])
+  }, [stopKeepAlive])
 
   const startAudioCapture = useCallback((socket: WebSocket, stream: MediaStream) => {
     // Deepgram expects 16kHz linear16 PCM audio
@@ -183,6 +208,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
           console.log('[Deepgram] Connected! (audio paused until startListening)')
           isConnectedRef.current = true
           setIsConnected(true)
+          startKeepAlive() // Prevent idle timeout during AI playback
           onSessionStarted?.()
           startAudioCapture(socket, stream)
           resolve(true)
@@ -264,7 +290,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
       onError?.(err instanceof Error ? err : new Error('Failed to start session'))
       return false
     }
-  }, [cleanup, buildWsUrl, onPartialTranscript, onCommittedTranscript, onSessionStarted, onError, onDisconnect, startAudioCapture])
+  }, [cleanup, buildWsUrl, startKeepAlive, onPartialTranscript, onCommittedTranscript, onSessionStarted, onError, onDisconnect, startAudioCapture])
 
   // START listening - begins sending audio to Deepgram (billing starts)
   const startListening = useCallback(() => {
@@ -303,6 +329,9 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
 
     console.log('[Deepgram] Reconnecting with new keyterms:', keyterms.slice(0, 5).join(', '), '...')
 
+    // Stop keepalive for old socket
+    stopKeepAlive()
+
     // Close old socket — null out handlers first to prevent onclose from
     // firing onDisconnect (which would trigger auto-reconnect and race with us)
     if (processorRef.current) {
@@ -333,6 +362,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
         console.log('[Deepgram] Reconnected with new keyterms')
         isConnectedRef.current = true
         setIsConnected(true)
+        startKeepAlive() // Restart keepalive for new socket
         startAudioCapture(socket, stream)
         resolve(true)
       }
@@ -386,7 +416,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
         }
       }, 5000)
     })
-  }, [buildWsUrl, startAudioCapture, onPartialTranscript, onCommittedTranscript, onDisconnect])
+  }, [buildWsUrl, startKeepAlive, stopKeepAlive, startAudioCapture, onPartialTranscript, onCommittedTranscript, onDisconnect])
 
   // Full disconnect
   const stopSession = useCallback(() => {

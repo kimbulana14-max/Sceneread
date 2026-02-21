@@ -1703,12 +1703,9 @@ export function PracticeScreen() {
         console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
         finishListeningRef.current()
       } else if (silenceMs > 15000 && !hasTranscript) {
-        console.warn('[STT] 15s no-speech timeout — resetting')
-        if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
-        listeningRef.current = false
-        deepgram.pauseListening()
-        setStatus('idle')
-        busyRef.current = false
+        // Emergency: 15s with no speech — evaluate as empty (triggers 'wrong' flow with retry)
+        console.warn('[STT] 15s no-speech timeout — evaluating empty')
+        finishListeningRef.current()
       }
     }, 250)
   }
@@ -1751,23 +1748,23 @@ export function PracticeScreen() {
 
     console.log('[finishListening] spoken:', spoken, 'expected:', expectedLineRef.current, 'segIdx:', segIdx, 'segs.length:', segs.length)
     
-    if (!spoken || !currentLine) { 
+    if (!spoken || !currentLine) {
       playIncorrect()
       setTranscript(spoken || '')
-      
+
       // Get word-by-word results even for empty transcript (all words will be "missing")
       if (expectedLineRef.current) {
         const wordByWord = getWordByWordResults(expectedLineRef.current, spoken || '', characterNameSet)
         setWordResults(wordByWord.results)
       }
-      
+
       if (learningMode === 'repeat' && segs.length > 0) {
         // Reset timeout counter on wrong (not timeout)
         setConsecutiveTimeouts(0)
         // Increment consecutive wrongs
         const newWrongCount = consecutiveWrongs + 1
         setConsecutiveWrongs(newWrongCount)
-        
+
         // If 3 wrongs in a row and not on first segment, go back
         if (newWrongCount >= 3 && segIdx > 0) {
           const prevIndex = segIdx - 1
@@ -1804,10 +1801,19 @@ export function PracticeScreen() {
           }, 2000)
         }
       } else {
+        // Practice mode: empty transcript (no speech detected)
         setStatus('wrong')
         busyRef.current = false
+        // Auto-retry same line if setting enabled (same logic as normal wrong branch)
+        if (settings.autoRepeatOnWrong && isPlayingRef.current) {
+          setTimeout(() => {
+            if (!isPlayingRef.current) return
+            setStatus('idle')
+            playCurrentLine()
+          }, 1500)
+        }
       }
-      return 
+      return
     }
     
     const result = checkAccuracy(expectedLineRef.current, spoken, settings.strictMode, characterNameSet)

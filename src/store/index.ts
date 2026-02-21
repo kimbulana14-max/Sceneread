@@ -199,7 +199,7 @@ export const defaultSettings: PracticeSettings = {
   playbackSpeed: 1.0,
   textVisibility: 'full',
   playYourTurnCue: true,
-  autoRepeatOnWrong: false,
+  autoRepeatOnWrong: true,
   playMyLine: false,
   visibilityBeforeSpeaking: 'first-letter',
   visibilityAfterSpeaking: 'full',
