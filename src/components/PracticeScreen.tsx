@@ -181,6 +181,7 @@ export function PracticeScreen() {
   const [consecutiveLineFails, setConsecutiveLineFails] = useState(0) // Track full line failures for restart-on-fail
   const [fullLineCompletions, setFullLineCompletions] = useState(0) // Track full line repetitions at end
   const [showStillThere, setShowStillThere] = useState(false) // Show "still there?" message
+  const [showWaitingNudge, setShowWaitingNudge] = useState(false) // Gentle "waiting for you..." nudge
   const [lastLineAccuracy, setLastLineAccuracy] = useState<number | null>(null) // Per-line accuracy %
   const [coldReadExpired, setColdReadExpired] = useState(false) // Cold read timer expired
   const [lastPickupTime, setLastPickupTime] = useState<number | null>(null) // Cue pickup ms
@@ -1635,22 +1636,25 @@ export function PracticeScreen() {
     // Start recording user audio for playback
     deepgram.startRecording()
 
-    // Silence timer - evaluate after silence, with emergency no-speech timeout
+    // Silence timer - evaluate after silence when user has spoken
+    // No emergency timeout — actors pause naturally. Show gentle nudge instead.
+    setShowWaitingNudge(false)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
       if (!listeningRef.current) {
         if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
+        setShowWaitingNudge(false)
         return
       }
       const silenceMs = Date.now() - lastSpeechRef.current
       const hasTranscript = transcriptRef.current.trim()
       if (silenceMs > settings.silenceDuration && hasTranscript) {
         console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
+        setShowWaitingNudge(false)
         finishListeningRef.current()
-      } else if (silenceMs > 15000 && !hasTranscript) {
-        // Emergency: 15s with no speech — evaluate as empty (triggers 'wrong' flow)
-        console.warn('[STT] 15s no-speech timeout — evaluating empty')
-        finishListeningRef.current()
+      } else if (silenceMs > 10000 && !hasTranscript) {
+        // Gentle nudge after 10s — don't evaluate, just show hint
+        setShowWaitingNudge(true)
       }
     }, 250)
   }
@@ -1713,6 +1717,7 @@ export function PracticeScreen() {
   const finishListening = useCallback(() => {
     if (!listeningRef.current) return
     listeningRef.current = false
+    setShowWaitingNudge(false)
 
     // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
     deepgram.pauseListening()
@@ -2060,7 +2065,8 @@ export function PracticeScreen() {
   // Hard stop - doesn't evaluate, just stops
   const stopListening = () => {
     listeningRef.current = false
-    
+    setShowWaitingNudge(false)
+
     // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
     deepgram.pauseListening()
     
@@ -3234,6 +3240,23 @@ export function PracticeScreen() {
         )}
       </AnimatePresence>
 
+      {/* Gentle "waiting for you" nudge after 10s silence (practice mode) */}
+      <AnimatePresence>
+        {showWaitingNudge && status === 'listening' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed bottom-36 left-1/2 -translate-x-1/2 z-[100]"
+          >
+            <div className="px-4 py-2 rounded-full bg-bg-surface/90 backdrop-blur border border-border text-text-muted text-xs font-medium flex items-center gap-2">
+              <IconMic size={14} className="text-accent animate-pulse" />
+              <span>Waiting for you... tap skip to move on</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* "Still there?" prompt after 3 timeouts */}
       <AnimatePresence>
         {showStillThere && (
@@ -3356,10 +3379,22 @@ export function PracticeScreen() {
         >
           <IconSkipBack size={16} />
         </button>
-        <button 
-          onClick={() => { stopPlayback(); next() }} 
-          disabled={status === 'listening' || status === 'connecting'} 
-          className="w-9 h-9 rounded-full bg-bg-surface/80 backdrop-blur flex items-center justify-center disabled:opacity-30 text-text-muted"
+        <button
+          onClick={() => {
+            // Always-available escape: skip to next line regardless of state
+            if (listeningRef.current) {
+              listeningRef.current = false
+              setShowWaitingNudge(false)
+              deepgram.pauseListening()
+              if (silenceTimerRef.current) { clearInterval(silenceTimerRef.current); silenceTimerRef.current = null }
+              if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null }
+            }
+            busyRef.current = false
+            if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0 }
+            setStatus('idle')
+            next()
+          }}
+          className="w-9 h-9 rounded-full bg-bg-surface/80 backdrop-blur flex items-center justify-center text-text-muted active:scale-90 transition-transform"
         >
           <IconSkipForward size={16} />
         </button>
