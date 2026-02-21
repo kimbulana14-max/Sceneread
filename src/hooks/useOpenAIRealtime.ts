@@ -294,12 +294,17 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     // Do NOT add filler words (umm, hmm) — they cause Whisper to hallucinate fillers
     const prompt = expectedLine.slice(0, 200)
 
+    if (!prompt) return
     console.log('[OpenAI Realtime] Updating prompt:', prompt.slice(0, 60) + '...')
     socket.send(JSON.stringify({
-      type: 'transcription_session.update',
+      type: 'session.update',
       session: {
-        input_audio_transcription: {
-          prompt,
+        audio: {
+          input: {
+            transcription: {
+              prompt,
+            },
+          },
         },
       },
     }))

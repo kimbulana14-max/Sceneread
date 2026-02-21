@@ -27,7 +27,6 @@ export async function GET() {
               },
               transcription: {
                 model: 'gpt-4o-transcribe',
-                prompt: 'Umm, let me think like, hmm... mhm, mm-hmm, uh-huh, uh, ah, er, um, hm, yeah, yea, yep, yup, nope, nah, okay, alright, mmm-hmm',
                 language: 'en',
               },
               turn_detection: {
