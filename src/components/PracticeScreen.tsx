@@ -324,7 +324,9 @@ export function PracticeScreen() {
     onSessionStarted: () => {
       console.log('[STT] Session started')
       setMicReady(true)
-      setStatus('idle')
+      // Only reset to idle if not actively listening (startSession can be called
+      // as a reconnect fallback inside startListening — don't clobber 'listening' status)
+      if (!listeningRef.current) setStatus('idle')
     },
     onError: (error) => {
       console.error('[STT] Error:', error)
@@ -1153,7 +1155,14 @@ export function PracticeScreen() {
           targetDurationRef.current = (audioRef.current.duration / audioRate) * 1000
         }
         await audioRef.current.play();
-        await new Promise(r => { if (audioRef.current) audioRef.current.onended = r });
+        // Wait for audio to end, with safety timeout (mobile can pause audio when backgrounded)
+        const duration = audioRef.current.duration || 30
+        await new Promise<void>(r => {
+          if (!audioRef.current) return r()
+          const safetyTimeout = setTimeout(r, (duration * 1000 / (audioRef.current.playbackRate || 1)) + 5000)
+          audioRef.current.onended = () => { clearTimeout(safetyTimeout); r() }
+          audioRef.current.onpause = () => { clearTimeout(safetyTimeout); r() }
+        });
       } catch (e) {
         console.warn('Audio playback error:', e);
       }
@@ -2806,7 +2815,7 @@ export function PracticeScreen() {
               >
                 <div 
                   onClick={() => canInteract && goTo(i, true)}
-                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/25 text-ai' : 'bg-overlay-5 text-text-muted'}`}
+                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai-highlight text-ai' : 'bg-overlay-5 text-text-muted'}`}
                 >
                   {line.content}
                   <button
@@ -2853,7 +2862,7 @@ export function PracticeScreen() {
               key={line.id} 
               ref={(el) => { if (el) lineRefs.current.set(i, el) }}
               animate={{ scale: isCurrent ? 1.01 : 1 }} 
-              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? 'bg-ai/25' : isDone ? 'bg-success/5' : ''} ${isSelected ? 'bg-ai/15' : ''}`}
+              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? 'bg-ai-highlight' : isDone ? 'bg-success/5' : ''} ${isSelected ? 'bg-ai-muted' : ''}`}
             >
               <div className="p-3" onClick={handleLineTap}>
                 <div className="flex items-center gap-2 mb-1">

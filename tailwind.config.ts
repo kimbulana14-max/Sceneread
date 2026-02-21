@@ -34,6 +34,7 @@ const config: Config = {
         ai: {
           DEFAULT: 'var(--ai)',
           muted: 'var(--ai-muted)',
+          highlight: 'var(--ai-highlight)',
           border: 'var(--ai-border)',
         },
         success: {
