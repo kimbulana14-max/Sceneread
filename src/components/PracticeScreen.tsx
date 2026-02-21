@@ -1534,10 +1534,16 @@ export function PracticeScreen() {
         clearInterval(silenceTimerRef.current!);
         handleBuildTimeout();
       }
-      else if (silenceMs > settings.silenceDuration && hasTranscript) {
-        // Use user's silence duration setting for build mode
-        console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms')
-        finishListeningRef.current();
+      else if (hasTranscript) {
+        // Coverage-aware: if user said less than 70% of expected, give more time
+        const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
+        const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
+        const coverage = spokenWords / Math.max(1, expectedWords)
+        const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        if (silenceMs > timeout) {
+          console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms (coverage:', Math.round(coverage * 100) + '%, timeout:', timeout + 'ms)')
+          finishListeningRef.current();
+        }
       }
     }, 250); // Check frequently for responsiveness
   }
