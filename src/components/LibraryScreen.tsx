@@ -452,7 +452,7 @@ export function LibraryScreen() {
                           <div className="flex items-center gap-2">
                             <h3 className="text-text font-medium truncate">{script.title}</h3>
                             {(script.voices_ready || script.audio_status === 'completed') && (
-                              <span className="w-2 h-2 rounded-full bg-green-500" title="Audio ready" />
+                              <span className="w-2 h-2 rounded-full bg-success" title="Audio ready" />
                             )}
                             {isGenerating && (
                               <span className="w-2 h-2 rounded-full bg-ai animate-pulse" title="Generating audio" />
@@ -631,7 +631,6 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
   const [debugInfo, setDebugInfo] = useState<string[]>([])
   const [detectedCharacters, setDetectedCharacters] = useState<string[]>([])
   const [detectingCharacters, setDetectingCharacters] = useState(false)
-  const [pdfProgress, setPdfProgress] = useState('')
   const [roleInputMode, setRoleInputMode] = useState<'dropdown' | 'manual'>('dropdown')
   const [audioReady, setAudioReady] = useState(false)
   const [audioGenerating, setAudioGenerating] = useState(false)
@@ -686,8 +685,8 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 25 * 1024 * 1024) {
-      setError('File too large. Maximum size is 25MB.')
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File too large. Maximum size is 10MB.')
       return
     }
 
@@ -711,11 +710,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
       try {
         setExtractingPdf(true)
-        setPdfProgress('')
-        const preview = await getPDFPreview(file, (current, total) => {
-          setPdfProgress(`Analyzing page ${current} of ${total}...`)
-        })
-        setPdfProgress('')
+        const preview = await getPDFPreview(file)
         setPdfPreview(preview)
         setPdfInfo({ totalPages: preview.totalPages, title: preview.title })
         
@@ -751,11 +746,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
       return
     }
 
-    if (!user?.id) {
-      setError('Please sign in before importing a script.')
-      return
-    }
-    const userId = user.id
+    const userId = user?.id || 'temp-user-' + Date.now()
     
     setStep('importing')
     setError('')
@@ -806,39 +797,35 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
         }
       }
 
-      // Send to n8n and await response
+      // Fire the import request and use returned scriptId
       console.log('[Import] Sending to n8n...', { userId, userRole, hasFile: !!fileToSend, hasText: !!textToSend })
       addDebug('Sending to n8n webhook...')
-      setProgress('Uploading script...')
-
+      
+      // Store scriptId when we get it from n8n
       let importedScriptId: string | null = null
-
-      try {
-        const importData = await api.importScript({
-          userId,
-          userRole: userRole.toUpperCase(),
-          userGender: userGender || undefined,
-          file: fileToSend,
-          rawText: textToSend || undefined,
-          title: scriptTitle || undefined,
-          scriptType: scriptType,
-          accentHint: accentHint || undefined,
+      
+      api.importScript({
+        userId,
+        userRole: userRole.toUpperCase(),
+        userGender: userGender || undefined,
+        file: fileToSend,
+        rawText: textToSend || undefined,
+        title: scriptTitle || undefined,
+        scriptType: scriptType,
+        accentHint: accentHint || undefined,
+      })
+        .then(data => {
+          console.log('[Import] n8n response:', data)
+          addDebug(`n8n response: ${JSON.stringify(data).substring(0, 100)}`)
+          if (data.scriptId) {
+            importedScriptId = data.scriptId
+            addDebug(`Got scriptId: ${importedScriptId}`)
+          }
         })
-        console.log('[Import] n8n response:', importData)
-        addDebug(`n8n response: ${JSON.stringify(importData).substring(0, 100)}`)
-        if (importData.scriptId) {
-          importedScriptId = importData.scriptId
-          addDebug(`Got scriptId: ${importedScriptId}`)
-        } else {
-          addDebug('Warning: No scriptId in n8n response')
-        }
-      } catch (importErr: any) {
-        console.error('[Import] n8n error:', importErr)
-        addDebug(`n8n error: ${importErr.message}`)
-        setError('Failed to upload script. Please check your connection and try again.')
-        setStep('role')
-        return
-      }
+        .catch(err => {
+          console.error('[Import] n8n error:', err)
+          addDebug(`n8n error: ${err.message}`)
+        })
 
       // Poll for the script to be ready
       let attempts = 0
@@ -864,13 +851,10 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
           addDebug(`Poll attempt ${attempts}, ${elapsed}s elapsed, scriptId=${importedScriptId || 'waiting'}`)
         }
         
-        // If no scriptId from n8n, timeout after 90 seconds
+        // Wait until we have the scriptId from n8n
         if (!importedScriptId) {
-          if (attempts >= 45) {
-            clearInterval(checkInterval)
-            addDebug('No script ID available after 90 seconds')
-            setError('Import completed but script was not found. Please check your library.')
-            setStep('role')
+          if (attempts === 1) {
+            addDebug('Waiting for n8n response with scriptId...')
           }
           return
         }
@@ -910,12 +894,8 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
                 setAudioReady(false)
                 setStep('success')
                 onSuccess(script)
-
-                // Trigger batch audio generation then poll for completion
-                api.generateBatchAudio(script.id)
-                  .then(() => addDebug('Audio generation triggered'))
-                  .catch((err: any) => addDebug(`Audio generation trigger failed: ${err.message}`))
-
+                
+                // Start polling for audio completion in modal
                 pollAudioInModal(script.id)
                 return
               }
@@ -1023,7 +1003,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
               </div>
 
               {/* Audio status */}
-              <div className={`flex items-center justify-center gap-2 text-sm rounded-lg px-3 py-2.5 mb-4 ${audioReady ? 'bg-green-500/10 text-green-400' : 'bg-bg-surface text-text-muted'}`}>
+              <div className={`flex items-center justify-center gap-2 text-sm rounded-lg px-3 py-2.5 mb-4 ${audioReady ? 'bg-success-muted text-success' : 'bg-bg-surface text-text-muted'}`}>
                 {audioReady ? (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1164,7 +1144,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
                     </div>
                     <p className="text-text font-medium mb-1">Drop file here or click to upload</p>
                     <p className="text-text-muted text-xs">PDF, Image, Word, Final Draft, Fountain</p>
-                    <p className="text-text-subtle text-[10px] mt-2">Max 25MB</p>
+                    <p className="text-text-subtle text-[10px] mt-2">Max 10MB</p>
                   </div>
 
                   <div className="flex items-center gap-4">
@@ -1216,7 +1196,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
                   {extractingPdf ? (
                     <div className="flex items-center justify-center gap-2 py-8 text-text-muted">
                       <Spinner size={20} />
-                      <span>{pdfProgress || 'Analyzing PDF...'}</span>
+                      <span>Analyzing PDF...</span>
                     </div>
                   ) : pdfPreview ? (
                     <>
@@ -1761,7 +1741,7 @@ function VoiceSetupModal({ script, onClose }: { script: Script; onClose: () => v
               </Button>
             )}
             {audioStatus === 'ready' && (
-              <span className="text-green-400 text-sm font-medium">Ready</span>
+              <span className="text-success text-sm font-medium">Ready</span>
             )}
           </div>
           

@@ -128,17 +128,17 @@ export function AchievementNotification() {
             <div className="bg-bg-surface border border-accent/30 rounded-xl p-4 shadow-lg shadow-accent/10">
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                  notification.achievement.difficulty === 'hard' 
-                    ? 'bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30' 
+                  notification.achievement.difficulty === 'hard'
+                    ? 'bg-gradient-to-br from-warning-muted to-warning/10 border border-warning/30'
                     : notification.achievement.difficulty === 'medium'
-                      ? 'bg-gradient-to-br from-accent/20 to-rose-500/20 border border-accent/30'
+                      ? 'bg-gradient-to-br from-accent/20 to-accent/10 border border-accent/30'
                       : 'bg-accent/10 border border-accent/20'
                 }`}>
-                  <AchievementIcon 
-                    icon={notification.achievement.icon} 
+                  <AchievementIcon
+                    icon={notification.achievement.icon}
                     className={`w-6 h-6 ${
-                      notification.achievement.difficulty === 'hard' 
-                        ? 'text-yellow-400' 
+                      notification.achievement.difficulty === 'hard'
+                        ? 'text-warning'
                         : notification.achievement.difficulty === 'medium'
                           ? 'text-accent'
                           : 'text-accent/80'

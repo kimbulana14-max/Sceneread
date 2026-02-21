@@ -213,54 +213,32 @@ export async function getPDFInfo(file: File): Promise<PDFInfo> {
   return { totalPages: pdf.numPages, title }
 }
 
-export async function getPDFPreview(
-  file: File,
-  onProgress?: (currentPage: number, totalPages: number) => void
-): Promise<PDFPreview> {
+export async function getPDFPreview(file: File): Promise<PDFPreview> {
   const pdfjs = await getPdfJs()
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise
-
+  
   let title: string | undefined
   try {
     const metadata = await pdf.getMetadata()
     title = (metadata?.info as any)?.Title || undefined
   } catch (e) {}
-
-  const totalPages = pdf.numPages
-  console.log('[PDF] Extracting', totalPages, 'pages...')
-
-  // Process pages in parallel batches for speed
-  const BATCH_SIZE = 8
+  
+  console.log('[PDF] Extracting', pdf.numPages, 'pages...')
+  
   const pageTexts: { pageNum: number; text: string }[] = []
-
-  for (let batchStart = 1; batchStart <= totalPages; batchStart += BATCH_SIZE) {
-    const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages)
-    const batch: Promise<{ pageNum: number; text: string }>[] = []
-
-    for (let pageNum = batchStart; pageNum <= batchEnd; pageNum++) {
-      batch.push(
-        extractPageText(pdf, pageNum).then(text => ({ pageNum, text }))
-      )
-    }
-
-    const results = await Promise.all(batch)
-    pageTexts.push(...results)
-
-    if (onProgress) {
-      onProgress(batchEnd, totalPages)
-    }
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const text = await extractPageText(pdf, pageNum)
+    pageTexts.push({ pageNum, text })
   }
-
-  // Sort by page number (parallel execution may return out of order)
-  pageTexts.sort((a, b) => a.pageNum - b.pageNum)
-
+  
   const fullText = pageTexts.map(p => p.text).join('\n\n')
-  console.log('[PDF] Extracted', fullText.length, 'chars from', totalPages, 'pages')
-
+  console.log('[PDF] Extracted', fullText.length, 'chars')
+  console.log('[PDF] Sample (first 300 chars):', fullText.substring(0, 300))
+  
   const scenes = detectScenes(fullText, pageTexts)
-
-  return { totalPages, title, scenes, fullText }
+  
+  return { totalPages: pdf.numPages, title, scenes, fullText }
 }
 
 export async function extractPagesFromPDF(file: File, startPage: number, endPage: number): Promise<string> {

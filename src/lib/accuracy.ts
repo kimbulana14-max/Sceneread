@@ -242,6 +242,8 @@ const SKIPPABLE_SCRIPT_WORDS = [
   'phew', 'psst', 'shh', 'shush', 'tsk',
   // Beat/pause indicators
   'beat', 'pause', 'then',
+  // Common conversational fillers that actors may naturally omit
+  'well', 'so',
 ]
 
 /**
@@ -288,7 +290,7 @@ export interface AccuracyResult {
  * Check accuracy of spoken text vs expected script line
  * Strict matching for regular words, fuzzy only for proper nouns
  */
-export function checkAccuracy(expected: string, spoken: string): AccuracyResult {
+export function checkAccuracy(expected: string, spoken: string, strictMode: boolean = false): AccuracyResult {
   // Pre-process to handle stutters/dashes in script
   const processedExpected = preprocessStutters(expected)
   const expectedWordsWithOrig = getWordsWithOriginal(processedExpected)
@@ -303,32 +305,35 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
   const missingWords: string[] = []
   const extraWords: string[] = []
   const wrongWords: string[] = []
-  
+
   let expectedIdx = 0
   let spokenIdx = 0
   let matchedCount = 0
-  
+  let skippedCount = 0
+
   while (expectedIdx < expectedWords.length && spokenIdx < spokenWords.length) {
     const expWord = expectedWords[expectedIdx]
     const expOrig = expectedWordsWithOrig[expectedIdx].original
     const spkWord = spokenWords[spokenIdx]
     const isFirstWord = expectedIdx === 0
-    
+
     // Skip filler words in expected that Scribe might not pick up (um, uh, mmhmm, etc.)
     if (SKIPPABLE_SCRIPT_WORDS.includes(expWord) && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
-      // Scribe didn't pick up this filler, skip it - don't count as missing
+      // Scribe didn't pick up this filler, skip it - don't count as missing or in denominator
       expectedIdx++
+      skippedCount++
       continue
     }
-    
+
     // Skip repeated stutters - if this word is same as previous, user can skip it
     // e.g., "I--I am" becomes "I I am", user can say "I am" and skip the repeated "I"
     if (expectedIdx > 0 && expWord === expectedWords[expectedIdx - 1] && !wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
-      // This is a repeated word (stutter), skip it
+      // This is a repeated word (stutter), skip it - don't count in denominator
       expectedIdx++
+      skippedCount++
       continue
     }
-    
+
     // Direct match (strict for regular words, fuzzy for proper nouns)
     if (wordsMatch(expWord, spkWord, expOrig, isFirstWord)) {
       matchedCount++
@@ -336,11 +341,11 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
       spokenIdx++
       continue
     }
-    
+
     // Check multi-word expansions (e.g., "i'm" vs "i am")
     const expExpansions = EQUIVALENTS[expWord] || []
     let foundExpansion = false
-    
+
     for (const expansion of expExpansions) {
       const expWords = expansion.split(' ')
       if (expWords.length > 1) {
@@ -355,11 +360,11 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
       }
     }
     if (foundExpansion) continue
-    
+
     // Reverse: spoken is contracted, expected is expanded
     const spkExpansions = EQUIVALENTS[spkWord] || []
     let foundContraction = false
-    
+
     for (const expansion of spkExpansions) {
       const expWords = expansion.split(' ')
       if (expWords.length > 1) {
@@ -374,12 +379,19 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
       }
     }
     if (foundContraction) continue
-    
+
+    // Skip filler words in spoken (user says "um", "uh" etc. mid-sentence)
+    // Must be checked BEFORE look-ahead to prevent alignment disruption
+    if (FILLER_WORDS.includes(spkWord)) {
+      spokenIdx++
+      continue
+    }
+
     // No match - look ahead to determine if insertion, deletion, or substitution
     const lookAhead = 3
     let foundExpectedAhead = -1
     let foundSpokenAhead = -1
-    
+
     for (let i = 1; i <= lookAhead && expectedIdx + i < expectedWords.length; i++) {
       const aheadOrig = expectedWordsWithOrig[expectedIdx + i].original
       if (wordsMatch(expectedWords[expectedIdx + i], spkWord, aheadOrig, false)) {
@@ -387,14 +399,14 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
         break
       }
     }
-    
+
     for (let i = 1; i <= lookAhead && spokenIdx + i < spokenWords.length; i++) {
       if (wordsMatch(spokenWords[spokenIdx + i], expWord, expOrig, isFirstWord)) {
         foundSpokenAhead = i
         break
       }
     }
-    
+
     if (foundExpectedAhead === -1 && foundSpokenAhead === -1) {
       // Substitution
       wrongWords.push(`"${spkWord}" instead of "${expWord}"`)
@@ -412,13 +424,19 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
       spokenIdx++
     }
   }
-  
-  // Remaining expected = missing
+
+  // Remaining expected = missing (but skip stutters and skippable words)
   while (expectedIdx < expectedWords.length) {
-    missingWords.push(expectedWords[expectedIdx])
+    const word = expectedWords[expectedIdx]
+    if (SKIPPABLE_SCRIPT_WORDS.includes(word) ||
+        (expectedIdx > 0 && word === expectedWords[expectedIdx - 1])) {
+      skippedCount++
+    } else {
+      missingWords.push(word)
+    }
     expectedIdx++
   }
-  
+
   // Remaining spoken = extra (ignore fillers)
   while (spokenIdx < spokenWords.length) {
     if (!FILLER_WORDS.includes(spokenWords[spokenIdx])) {
@@ -426,24 +444,25 @@ export function checkAccuracy(expected: string, spoken: string): AccuracyResult 
     }
     spokenIdx++
   }
-  
-  // Calculate accuracy
-  const accuracy = Math.round((matchedCount / expectedWords.length) * 100)
-  
-  // Scale tolerance based on line length - longer lines get more slack
-  const wordCount = expectedWords.length
-  const allowedMissing = wordCount > 20 ? 3 : wordCount > 10 ? 2 : 1
-  const allowedExtra = wordCount > 20 ? 3 : wordCount > 10 ? 2 : 1
-  const minAccuracy = wordCount > 20 ? 85 : 90
-  
+
+  // Calculate accuracy using effective word count (excluding skipped stutters/fillers)
+  const effectiveWordCount = expectedWords.length - skippedCount
+  const accuracy = effectiveWordCount > 0 ? Math.round((matchedCount / effectiveWordCount) * 100) : 100
+
+  // Scale tolerance based on effective line length and strict mode
+  const wordCount = effectiveWordCount
+  const allowedMissing = strictMode ? 0 : (wordCount > 20 ? 3 : wordCount > 10 ? 2 : 1)
+  const allowedExtra = strictMode ? 0 : (wordCount > 20 ? 3 : wordCount > 10 ? 2 : 1)
+  const minAccuracy = strictMode ? 100 : (wordCount > 20 ? 85 : 90)
+
   // Pass criteria:
   // - No wrong substitutions (saying "old" instead of "young" is always a fail)
-  // - Meet minimum accuracy threshold (scales with line length)
-  // - Within allowed missing/extra words (scales with line length)
-  const isCorrect = 
-    wrongWords.length === 0 && 
-    accuracy >= minAccuracy && 
-    missingWords.length <= allowedMissing && 
+  // - Meet minimum accuracy threshold (scales with line length, or 100% in strict mode)
+  // - Within allowed missing/extra words (0 in strict mode)
+  const isCorrect =
+    wrongWords.length === 0 &&
+    accuracy >= minAccuracy &&
+    missingWords.length <= allowedMissing &&
     extraWords.length <= allowedExtra
   
   return { isCorrect, accuracy, missingWords, extraWords, wrongWords }

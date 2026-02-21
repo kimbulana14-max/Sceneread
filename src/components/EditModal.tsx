@@ -466,7 +466,7 @@ function MetadataRow({ label, value, mono, highlight }: { label: string; value: 
   return (
     <div className="flex justify-between items-center">
       <span className="text-text-muted">{label}</span>
-      <span className={`${mono ? 'font-mono text-xs' : ''} ${highlight ? 'text-green-400' : 'text-text'}`}>
+      <span className={`${mono ? 'font-mono text-xs' : ''} ${highlight ? 'text-success' : 'text-text'}`}>
         {value ?? '-'}
       </span>
     </div>

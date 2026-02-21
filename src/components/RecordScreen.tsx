@@ -1878,7 +1878,7 @@ export default function RecordScreen() {
                       
                       {/* Favorite indicator */}
                       {recording.is_favorite && (
-                        <div className="text-yellow-400 flex-shrink-0">
+                        <div className="text-warning flex-shrink-0">
                           <Icons.Star filled size={16} />
                         </div>
                       )}
@@ -2101,7 +2101,7 @@ export default function RecordScreen() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleSavedRecordingFavorite(selectedRecordingForPreview.id)}
-                      className={`p-2 rounded-lg hover:bg-white/10 ${selectedRecordingForPreview.is_favorite ? 'text-yellow-400' : 'text-text-muted'}`}
+                      className={`p-2 rounded-lg hover:bg-white/10 ${selectedRecordingForPreview.is_favorite ? 'text-warning' : 'text-text-muted'}`}
                     >
                       <Icons.Star filled={selectedRecordingForPreview.is_favorite} />
                     </button>
@@ -2366,9 +2366,9 @@ export default function RecordScreen() {
                         key={idx}
                         className={`transition-colors duration-150 ${
                           isMatched 
-                            ? 'text-green-400' 
+                            ? 'text-success' 
                             : isErrorWord 
-                              ? 'text-red-400 underline decoration-red-400' 
+                              ? 'text-error underline decoration-error' 
                               : 'text-white'
                         }`}
                       >
@@ -2418,9 +2418,9 @@ export default function RecordScreen() {
         {/* STT status and transcript */}
         {teleprompterSettings.mode === 'stt' && isRecording && !isPaused && (
           <div className={`${isFullscreen ? 'mx-6 mb-4' : isCustomPosition ? 'absolute bottom-0 left-0 right-0' : 'mx-3 mt-1'} px-3 py-2 backdrop-blur-sm text-sm rounded-lg flex items-center gap-2 ${
-            hasWordError ? 'bg-red-500/40 text-red-200' : 'bg-green-500/40 text-green-200'
+            hasWordError ? 'bg-error/40 text-error/80' : 'bg-success/40 text-success/80'
           }`}>
-            <div className={`w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0 ${hasWordError ? 'bg-red-400' : 'bg-green-400'}`} />
+            <div className={`w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0 ${hasWordError ? 'bg-error' : 'bg-success'}`} />
             <span className="truncate font-medium">
               {sttTranscript || 'Listening...'}
             </span>
@@ -2495,7 +2495,7 @@ export default function RecordScreen() {
           <div className="absolute left-0 right-0" style={{ top: '30%' }}>
             <div className="flex items-center justify-center gap-2">
               <div className="flex-1 h-px bg-gradient-to-r from-transparent via-yellow-400/50 to-transparent" />
-              <span className="text-[10px] text-yellow-400/70 px-1">EYELINE</span>
+              <span className="text-[10px] text-warning/70 px-1">EYELINE</span>
               <div className="flex-1 h-px bg-gradient-to-l from-transparent via-yellow-400/50 to-transparent" />
             </div>
           </div>
@@ -2775,7 +2775,7 @@ export default function RecordScreen() {
               <div className="text-sm text-text-muted">{formatTime(selectedTake.duration)}</div>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={() => toggleStarTake(selectedTake.id)} className={`p-2 rounded-lg ${selectedTake.starred ? 'text-yellow-400' : 'text-text-muted'}`}>
+              <button onClick={() => toggleStarTake(selectedTake.id)} className={`p-2 rounded-lg ${selectedTake.starred ? 'text-warning' : 'text-text-muted'}`}>
                 <Icons.Star filled={selectedTake.starred} />
               </button>
               <button onClick={() => uploadTake(selectedTake)} disabled={selectedTake.uploaded || uploading === selectedTake.id}
@@ -2852,7 +2852,7 @@ export default function RecordScreen() {
                 className={`rounded-xl overflow-hidden border-2 text-left ${selectedTake?.id === take.id ? 'border-accent' : 'border-transparent'}`}>
                 <div className={`${take.isPortrait ? 'aspect-[9/16]' : 'aspect-video'} bg-bg-surface relative`}>
                   {take.thumbnail ? <img src={take.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><Icons.Camera /></div>}
-                  {take.starred && <div className="absolute top-1 right-1 text-yellow-400"><Icons.Star filled /></div>}
+                  {take.starred && <div className="absolute top-1 right-1 text-warning"><Icons.Star filled /></div>}
                   {take.uploaded && <div className="absolute top-1 left-1 text-success"><Icons.Check /></div>}
                   {take.notes && <div className="absolute bottom-1 left-1 text-text-muted"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></div>}
                   <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-xs">{formatTime(take.duration)}</div>
@@ -2879,7 +2879,7 @@ export default function RecordScreen() {
             <div className="flex items-center justify-between p-4 bg-black/80 relative z-10">
               <div>
                 <div className="font-medium text-white">Take #{takePreviewModal.number}</div>
-                <div className="text-sm text-gray-400">{formatTime(takePreviewModal.duration)}</div>
+                <div className="text-sm text-text-muted">{formatTime(takePreviewModal.duration)}</div>
               </div>
               <button
                 onClick={() => setTakePreviewModal(null)}
@@ -2944,7 +2944,7 @@ export default function RecordScreen() {
             <div className="flex items-center justify-center gap-4 p-4 bg-black/80 relative z-10">
               <button
                 onClick={() => toggleStarTake(takePreviewModal.id)}
-                className={`p-3 rounded-full ${takePreviewModal.starred ? 'bg-yellow-400/20 text-yellow-400' : 'bg-white/10 text-white'}`}
+                className={`p-3 rounded-full ${takePreviewModal.starred ? 'bg-warning-muted text-warning' : 'bg-white/10 text-white'}`}
               >
                 <Icons.Star filled={takePreviewModal.starred} />
               </button>
@@ -3146,7 +3146,7 @@ export default function RecordScreen() {
       {isRecording && (
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-20 safe-area-top">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60">
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+            <div className="w-3 h-3 rounded-full bg-error animate-pulse" />
             <span className="text-sm font-mono">{formatTime(recordingTime)}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -3157,7 +3157,7 @@ export default function RecordScreen() {
               </div>
             )}
             {sceneState === 'user-speaking' && (
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${hasWordError ? 'bg-red-500/80' : matchedWordCount > 0 ? 'bg-green-500/80' : 'bg-accent/80'}`}>
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${hasWordError ? 'bg-error/80' : matchedWordCount > 0 ? 'bg-success/80' : 'bg-accent/80'}`}>
                 {teleprompterSettings.mode === 'stt' && matchedWordCount > 0 && (
                   <span className="text-xs text-white font-mono">{matchedWordCount}</span>
                 )}
@@ -3185,7 +3185,7 @@ export default function RecordScreen() {
             {/* TEST MODE TOGGLE */}
             <button 
               onClick={() => setSimpleRecordMode(s => !s)}
-              className={`px-3 py-2 rounded-full text-xs font-mono ${simpleRecordMode ? 'bg-green-500/80 text-white' : 'bg-black/60 text-text-muted'}`}
+              className={`px-3 py-2 rounded-full text-xs font-mono ${simpleRecordMode ? 'bg-success/80 text-white' : 'bg-black/60 text-text-muted'}`}
             >
               {simpleRecordMode ? 'SIMPLE' : 'CANVAS'}
             </button>
@@ -3194,7 +3194,7 @@ export default function RecordScreen() {
               <span className="text-sm">{takes.length}</span>
             </button>
             <button onClick={() => setRecordingSettings(s => ({ ...s, showGrid: !s.showGrid }))}
-              className={`p-2 rounded-full bg-black/60 ${recordingSettings.showGrid ? 'text-yellow-400' : ''}`}>
+              className={`p-2 rounded-full bg-black/60 ${recordingSettings.showGrid ? 'text-warning' : ''}`}>
               <Icons.GridLines />
             </button>
             {cameras.length > 1 && (
@@ -3238,10 +3238,10 @@ export default function RecordScreen() {
             onClick={() => isRecording ? stopRecording() : startRecording()}
             disabled={!cameraReady}
             className={`w-20 h-20 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-              isRecording ? 'bg-red-500' : 'bg-white'
+              isRecording ? 'bg-error' : 'bg-white'
             } disabled:opacity-50 shadow-lg`}
           >
-            {isRecording ? <Icons.Stop /> : <div className="w-7 h-7 rounded-full bg-red-500" />}
+            {isRecording ? <Icons.Stop /> : <div className="w-7 h-7 rounded-full bg-error" />}
           </button>
           
           {selectedScriptForRecording ? (
@@ -3316,7 +3316,7 @@ function RecordingItem({ recording, onDelete }: { recording: SavedRecording; onD
       {/* Actions */}
       <div className="flex items-center gap-1">
         {recording.is_favorite && (
-          <div className="p-1.5 text-yellow-400">
+          <div className="p-1.5 text-warning">
             <Icons.Star filled />
           </div>
         )}

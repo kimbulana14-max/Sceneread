@@ -12,7 +12,7 @@ export function ProfileScreen() {
   const { user, setUser, setActiveTab } = useStore()
   const { settings, updateSettings } = useSettings()
   const [loggingOut, setLoggingOut] = useState(false)
-  const [activeModal, setActiveModal] = useState<'edit-profile' | 'achievements' | 'voice' | null>(null)
+  const [activeModal, setActiveModal] = useState<'edit-profile' | 'achievements' | 'voice' | 'practice' | 'narration' | null>(null)
   
   // Achievements
   const { 
@@ -186,13 +186,13 @@ export function ProfileScreen() {
                       key={achievement.id}
                       className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
                         isUnlocked(achievement.id) 
-                          ? 'bg-green-500/20 border border-green-500/30' 
+                          ? 'bg-success/20 border border-success-border' 
                           : 'bg-bg-elevated border border-border/30 opacity-40'
                       }`}
                     >
                       <AchievementIcon 
                         icon={achievement.icon} 
-                        className={`w-4 h-4 ${isUnlocked(achievement.id) ? 'text-green-400' : 'text-text-subtle'}`}
+                        className={`w-4 h-4 ${isUnlocked(achievement.id) ? 'text-success' : 'text-text-subtle'}`}
                       />
                     </div>
                   ))}
@@ -242,13 +242,13 @@ export function ProfileScreen() {
                       key={achievement.id}
                       className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
                         isUnlocked(achievement.id) 
-                          ? 'bg-yellow-500/20 border border-yellow-500/30' 
+                          ? 'bg-warning/20 border border-warning/30' 
                           : 'bg-bg-elevated border border-border/30 opacity-40'
                       }`}
                     >
                       <AchievementIcon 
                         icon={achievement.icon} 
-                        className={`w-4 h-4 ${isUnlocked(achievement.id) ? 'text-yellow-400' : 'text-text-subtle'}`}
+                        className={`w-4 h-4 ${isUnlocked(achievement.id) ? 'text-warning' : 'text-text-subtle'}`}
                       />
                     </div>
                   ))}
@@ -278,7 +278,7 @@ export function ProfileScreen() {
             <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Practice Settings</h3>
           </div>
           <div className="divide-y divide-border/30">
-            <button 
+            <button
               onClick={() => setActiveModal('voice')}
               className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-white/[0.02] transition-colors"
             >
@@ -289,8 +289,46 @@ export function ProfileScreen() {
                   </svg>
                 </div>
                 <div className="text-left">
-                  <span className="text-sm text-text block">Voice & Playback</span>
-                  <span className="text-xs text-text-muted">Speed, text visibility</span>
+                  <span className="text-sm text-text block">Sound & Playback</span>
+                  <span className="text-xs text-text-muted">Speed, sounds, text visibility</span>
+                </div>
+              </div>
+              <svg className="w-4 h-4 text-text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setActiveModal('practice')}
+              className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-white/[0.02] transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-bg-surface flex items-center justify-center">
+                  <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <span className="text-sm text-text block">Practice Behaviour</span>
+                  <span className="text-xs text-text-muted">Auto-advance, retries, strict mode</span>
+                </div>
+              </div>
+              <svg className="w-4 h-4 text-text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setActiveModal('narration')}
+              className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-white/[0.02] transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-bg-surface flex items-center justify-center">
+                  <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <span className="text-sm text-text block">Narration & Audio</span>
+                  <span className="text-xs text-text-muted">Character names, directions, pre-gen audio</span>
                 </div>
               </div>
               <svg className="w-4 h-4 text-text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -392,7 +430,9 @@ export function ProfileScreen() {
                 <h2 className="text-lg font-medium text-text">
                   {activeModal === 'edit-profile' && 'Edit Profile'}
                   {activeModal === 'achievements' && 'Achievements'}
-                  {activeModal === 'voice' && 'Voice & Playback'}
+                  {activeModal === 'voice' && 'Sound & Playback'}
+                  {activeModal === 'practice' && 'Practice Behaviour'}
+                  {activeModal === 'narration' && 'Narration & Audio'}
                 </h2>
                 {activeModal === 'achievements' && (
                   <div className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-accent/10 rounded-full">
@@ -412,7 +452,7 @@ export function ProfileScreen() {
                     {saveMessage && (
                       <div className={`p-3 rounded-lg text-sm ${
                         saveMessage.type === 'success' 
-                          ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                          ? 'bg-success/20 text-success border border-success-border' 
                           : 'bg-red-500/20 text-red-400 border border-red-500/30'
                       }`}>
                         {saveMessage.text}
@@ -518,44 +558,60 @@ export function ProfileScreen() {
                   </div>
                 )}
 
-                {/* Voice & Playback Modal */}
+                {/* Sound & Playback Modal */}
                 {activeModal === 'voice' && (
                   <div className="space-y-6">
                     {/* Sound Settings */}
                     <div className="space-y-4">
-                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Sound & Feedback</h3>
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Sound Effects</h3>
                       <ToggleSetting
                         label="Sound on Correct"
-                        description="Play a sound when you say a line correctly"
+                        description="Play a tone when you say a line correctly"
                         value={settings.playSoundOnCorrect}
                         onChange={(v) => updateSettings({ playSoundOnCorrect: v })}
                       />
                       <ToggleSetting
                         label="Sound on Wrong"
-                        description="Play a sound when you make a mistake"
+                        description="Play a tone when you make a mistake"
                         value={settings.playSoundOnWrong}
                         onChange={(v) => updateSettings({ playSoundOnWrong: v })}
                       />
                       <ToggleSetting
-                        label="Auto-Advance"
-                        description="Automatically move to the next line after correct answer"
-                        value={settings.autoAdvanceOnCorrect}
-                        onChange={(v) => updateSettings({ autoAdvanceOnCorrect: v })}
+                        label="Your Turn Cue"
+                        description="Play a beep when it's your turn to speak"
+                        value={settings.playYourTurnCue}
+                        onChange={(v) => updateSettings({ playYourTurnCue: v })}
                       />
+                      <ToggleSetting
+                        label="Speak Error Feedback"
+                        description="Read out what you got wrong via TTS"
+                        value={settings.speakErrorFeedback}
+                        onChange={(v) => updateSettings({ speakErrorFeedback: v })}
+                      />
+                    </div>
+
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Display</h3>
                       <ToggleSetting
                         label="Show Live Transcript"
                         description="Show what you're saying in real-time"
                         value={settings.showLiveTranscript}
                         onChange={(v) => updateSettings({ showLiveTranscript: v })}
                       />
+                      <ToggleSetting
+                        label="Show Accuracy Score"
+                        description="Display word-by-word accuracy percentage"
+                        value={settings.showAccuracyScore}
+                        onChange={(v) => updateSettings({ showAccuracyScore: v })}
+                      />
                     </div>
 
                     <div className="border-t border-border pt-6">
-                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Playback</h3>
-                      
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Playback Speed</h3>
+
                       {/* Playback Speed */}
                       <div className="mb-6">
-                        <label className="block text-sm font-medium text-text mb-3">Playback Speed</label>
+                        <label className="block text-sm font-medium text-text mb-3">Partner Line Speed</label>
                         <div className="flex gap-2">
                           {[0.5, 0.75, 1, 1.25, 1.5].map((speed) => (
                             <button
@@ -573,9 +629,49 @@ export function ProfileScreen() {
                         </div>
                       </div>
 
-                      {/* Text Visibility */}
+                      {/* AI Voice Speed */}
                       <div className="mb-6">
-                        <label className="block text-sm font-medium text-text mb-3">Text Visibility (Your Lines)</label>
+                        <label className="block text-sm font-medium text-text mb-3">AI Voice Speed: {settings.aiVoiceSpeed}x</label>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2"
+                          step="0.1"
+                          value={settings.aiVoiceSpeed}
+                          onChange={(e) => updateSettings({ aiVoiceSpeed: parseFloat(e.target.value) })}
+                          className="w-full accent-accent"
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          Speed of AI-generated voice synthesis
+                        </p>
+                      </div>
+
+                      {/* Silence Duration */}
+                      <div>
+                        <label className="block text-sm font-medium text-text mb-3">
+                          Silence Detection: {(settings.silenceDuration / 1000).toFixed(1)}s
+                        </label>
+                        <input
+                          type="range"
+                          min="500"
+                          max="3000"
+                          step="100"
+                          value={settings.silenceDuration}
+                          onChange={(e) => updateSettings({ silenceDuration: parseInt(e.target.value) })}
+                          className="w-full accent-accent"
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          How long to wait after you stop speaking before processing
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border pt-6">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Text Visibility</h3>
+
+                      {/* Default Text Visibility */}
+                      <div className="mb-6">
+                        <label className="block text-sm font-medium text-text mb-3">Your Lines</label>
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { value: 'full', label: 'Full Text' },
@@ -598,24 +694,276 @@ export function ProfileScreen() {
                         </div>
                       </div>
 
-                      {/* Silence Duration */}
+                      {/* Before/After Visibility */}
+                      <ToggleSetting
+                        label="Before/After Visibility"
+                        description="Use different text visibility before and after you speak a line"
+                        value={settings.useBeforeAfterVisibility}
+                        onChange={(v) => updateSettings({ useBeforeAfterVisibility: v })}
+                      />
+
+                      {settings.useBeforeAfterVisibility && (
+                        <div className="space-y-4 mt-4 pl-2 border-l-2 border-accent/20">
+                          <div>
+                            <label className="block text-sm font-medium text-text mb-2">Before Speaking</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { value: 'full', label: 'Full' },
+                                { value: 'first-letter', label: 'First Letter' },
+                                { value: 'blurred', label: 'Blurred' },
+                                { value: 'hidden', label: 'Hidden' },
+                              ].map((option) => (
+                                <button
+                                  key={option.value}
+                                  onClick={() => updateSettings({ visibilityBeforeSpeaking: option.value as any })}
+                                  className={`py-2 px-3 rounded-lg text-xs font-medium transition-colors ${
+                                    settings.visibilityBeforeSpeaking === option.value
+                                      ? 'bg-accent text-white'
+                                      : 'bg-bg-surface text-text-muted hover:text-text'
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-text mb-2">After Speaking</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { value: 'full', label: 'Full' },
+                                { value: 'first-letter', label: 'First Letter' },
+                                { value: 'blurred', label: 'Blurred' },
+                                { value: 'hidden', label: 'Hidden' },
+                              ].map((option) => (
+                                <button
+                                  key={option.value}
+                                  onClick={() => updateSettings({ visibilityAfterSpeaking: option.value as any })}
+                                  className={`py-2 px-3 rounded-lg text-xs font-medium transition-colors ${
+                                    settings.visibilityAfterSpeaking === option.value
+                                      ? 'bg-accent text-white'
+                                      : 'bg-bg-surface text-text-muted hover:text-text'
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Practice Behaviour Modal */}
+                {activeModal === 'practice' && (
+                  <div className="space-y-6">
+                    {/* Auto-Advance */}
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Auto-Advance</h3>
+                      <ToggleSetting
+                        label="Auto-Advance on Correct"
+                        description="Automatically move to the next line after a correct answer"
+                        value={settings.autoAdvanceOnCorrect}
+                        onChange={(v) => updateSettings({ autoAdvanceOnCorrect: v })}
+                      />
+                      {settings.autoAdvanceOnCorrect && (
+                        <div className="pl-2 border-l-2 border-accent/20">
+                          <label className="block text-sm font-medium text-text mb-2">
+                            Advance Delay: {settings.autoAdvanceDelay}ms
+                          </label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="2000"
+                            step="100"
+                            value={settings.autoAdvanceDelay}
+                            onChange={(e) => updateSettings({ autoAdvanceDelay: parseInt(e.target.value) })}
+                            className="w-full accent-accent"
+                          />
+                          <p className="text-xs text-text-muted mt-1">
+                            Pause before advancing to the next line
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Matching */}
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Matching</h3>
+                      <ToggleSetting
+                        label="Strict Mode"
+                        description="Require exact word matching instead of fuzzy similarity"
+                        value={settings.strictMode}
+                        onChange={(v) => updateSettings({ strictMode: v })}
+                      />
+                    </div>
+
+                    {/* Retry Behaviour */}
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">On Mistake</h3>
+                      <ToggleSetting
+                        label="Auto-Repeat on Wrong"
+                        description="Automatically retry the line when you get it wrong"
+                        value={settings.autoRepeatOnWrong}
+                        onChange={(v) => updateSettings({ autoRepeatOnWrong: v })}
+                      />
+                      <ToggleSetting
+                        label="Repeat Full Line on Fail"
+                        description="Replay the entire line (not just the segment) on a mistake"
+                        value={settings.repeatFullLineOnFail}
+                        onChange={(v) => updateSettings({ repeatFullLineOnFail: v })}
+                      />
+                      <ToggleSetting
+                        label="Restart Scene on Fail"
+                        description="Go back to the beginning of the scene on a mistake"
+                        value={settings.restartOnFail}
+                        onChange={(v) => updateSettings({ restartOnFail: v })}
+                      />
+                    </div>
+
+                    {/* Listen Mode */}
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Listen Mode</h3>
+                      <ToggleSetting
+                        label="Play My Lines"
+                        description="Also play your character's lines during Listen mode"
+                        value={settings.playMyLine}
+                        onChange={(v) => updateSettings({ playMyLine: v })}
+                      />
+                    </div>
+
+                    {/* Timing */}
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Timing</h3>
                       <div>
-                        <label className="block text-sm font-medium text-text mb-3">
-                          Silence Detection: {(settings.silenceDuration / 1000).toFixed(1)}s
+                        <label className="block text-sm font-medium text-text mb-2">
+                          Wait for Me Delay: {settings.waitForMeDelay}ms
                         </label>
                         <input
                           type="range"
-                          min="500"
+                          min="0"
                           max="3000"
                           step="100"
-                          value={settings.silenceDuration}
-                          onChange={(e) => updateSettings({ silenceDuration: parseInt(e.target.value) })}
+                          value={settings.waitForMeDelay}
+                          onChange={(e) => updateSettings({ waitForMeDelay: parseInt(e.target.value) })}
                           className="w-full accent-accent"
                         />
                         <p className="text-xs text-text-muted mt-1">
-                          How long to wait after you stop speaking before processing
+                          Delay before the partner starts speaking after your line
                         </p>
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text mb-2">
+                          Repeat Full Line: {settings.repeatFullLineTimes}x
+                        </label>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4].map((n) => (
+                            <button
+                              key={n}
+                              onClick={() => updateSettings({ repeatFullLineTimes: n })}
+                              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                settings.repeatFullLineTimes === n
+                                  ? 'bg-accent text-white'
+                                  : 'bg-bg-surface text-text-muted hover:text-text'
+                              }`}
+                            >
+                              {n}x
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-muted mt-1">
+                          How many times to repeat the full line at the end of Build mode
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Advanced Mode Settings */}
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Mode Settings</h3>
+                      <div>
+                        <label className="block text-sm font-medium text-text mb-2">
+                          Cold Read Time: {settings.coldReadTime}s
+                        </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="10"
+                          step="1"
+                          value={settings.coldReadTime}
+                          onChange={(e) => updateSettings({ coldReadTime: parseInt(e.target.value) })}
+                          className="w-full accent-accent"
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          How long you can see the line before it hides (Cold Read mode)
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text mb-2">
+                          Cue-Only Words: {settings.cueOnlyWords}
+                        </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="8"
+                          step="1"
+                          value={settings.cueOnlyWords}
+                          onChange={(e) => updateSettings({ cueOnlyWords: parseInt(e.target.value) })}
+                          className="w-full accent-accent"
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          Number of words shown at the start of each line (Cue Only mode)
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Narration & Audio Modal */}
+                {activeModal === 'narration' && (
+                  <div className="space-y-6">
+                    {/* Character Narration */}
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Narration</h3>
+                      <ToggleSetting
+                        label="Announce Character Names"
+                        description="Say the character's name before their line"
+                        value={settings.speakCharacterNames}
+                        onChange={(v) => updateSettings({ speakCharacterNames: v })}
+                      />
+                      <ToggleSetting
+                        label="Narrate Parentheticals"
+                        description='Read out stage directions like "(angrily)" or "(whispering)"'
+                        value={settings.speakParentheticals}
+                        onChange={(v) => updateSettings({ speakParentheticals: v })}
+                      />
+                    </div>
+
+                    {/* Audio Source */}
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">Audio Source</h3>
+                      <ToggleSetting
+                        label="Use Pre-Generated Audio"
+                        description="Use pre-generated audio files when available (faster, saves API costs)"
+                        value={settings.usePreGeneratedAudio}
+                        onChange={(v) => updateSettings({ usePreGeneratedAudio: v })}
+                      />
+                    </div>
+
+                    {/* Reset */}
+                    <div className="border-t border-border pt-6">
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Reset all settings to defaults?')) {
+                            const { resetSettings } = useSettings.getState()
+                            resetSettings()
+                          }
+                        }}
+                        className="w-full py-3 px-4 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400 hover:bg-red-500/20 transition-colors"
+                      >
+                        Reset All Settings to Defaults
+                      </button>
                     </div>
                   </div>
                 )}
@@ -654,15 +1002,15 @@ function AchievementCard({
   progress: { current: number; target: number; percentage: number }
 }) {
   const difficultyColors = {
-    easy: 'border-green-500/30 bg-green-500/5',
+    easy: 'border-success-border bg-success/5',
     medium: 'border-accent/30 bg-accent/5',
-    hard: 'border-yellow-500/30 bg-yellow-500/5'
+    hard: 'border-warning/30 bg-warning/5'
   }
   
   const iconColors = {
-    easy: 'text-green-400',
+    easy: 'text-success',
     medium: 'text-accent',
-    hard: 'text-yellow-400'
+    hard: 'text-warning'
   }
 
   return (
@@ -708,10 +1056,10 @@ function AchievementCard({
           
           {unlocked && (
             <div className="flex items-center gap-1 mt-1.5">
-              <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-3 h-3 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
-              <span className="text-[10px] text-green-400 font-medium">Unlocked</span>
+              <span className="text-[10px] text-success font-medium">Unlocked</span>
             </div>
           )}
         </div>

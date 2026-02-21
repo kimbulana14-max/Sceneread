@@ -32,6 +32,8 @@ export interface PracticeSettings {
   usePreGeneratedAudio: boolean // Whether to use pre-generated audio URLs when available
   restartOnFail: boolean // Start from beginning of scene on fail
   repeatFullLineOnFail: boolean // Repeat the full line (not segment) on fail
+  randomOrder: boolean // Shuffle user lines for memorization training
+  partnerSpeedVariation: boolean // Randomly vary AI partner's speaking speed
 }
 
 // === PER-SCRIPT PRACTICE STATE ===
@@ -187,7 +189,7 @@ export const defaultSettings: PracticeSettings = {
   autoAdvanceOnCorrect: true,
   autoAdvanceDelay: 300,
   autoStartRecording: true,
-  silenceDuration: 2000,
+  silenceDuration: 1500,
   showLiveTranscript: true,
   showAccuracyScore: false,
   strictMode: false,
@@ -210,6 +212,8 @@ export const defaultSettings: PracticeSettings = {
   usePreGeneratedAudio: true,
   restartOnFail: false,
   repeatFullLineOnFail: false,
+  randomOrder: false,
+  partnerSpeedVariation: false,
 }
 
 const defaultScriptState = (scriptId: string): ScriptPracticeState => ({

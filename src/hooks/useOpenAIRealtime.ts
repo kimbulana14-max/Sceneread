@@ -35,23 +35,29 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
 
   const [isConnected, setIsConnected] = useState(false)
   const [isListening, setIsListening] = useState(false)
-  const [isReconnecting, setIsReconnecting] = useState(false)
-
+  
   const socketRef = useRef<WebSocket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const currentTranscriptRef = useRef<string>('')
-  const reconnectAttemptsRef = useRef(0)
-  const maxReconnectAttempts = 3
-
+  
   // CRITICAL: Controls whether audio is actually sent to OpenAI
   // When false, we're connected but not sending audio (no billing)
   const sendingAudioRef = useRef(false)
 
+  // Self-record playback: MediaRecorder captures mic audio alongside STT
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
+
   const cleanup = useCallback(() => {
     console.log('[OpenAI Realtime] Cleanup called')
     sendingAudioRef.current = false
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current = null
+    }
+    recordingChunksRef.current = []
     if (processorRef.current) {
       processorRef.current.disconnect()
       processorRef.current = null
@@ -168,8 +174,6 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
 
         socket.onopen = () => {
           console.log('[OpenAI Realtime] Connected! (audio paused until startListening)')
-          reconnectAttemptsRef.current = 0
-          setIsReconnecting(false)
           setIsConnected(true)
           // NOTE: isListening stays false until startListening() is called
           // Audio capture starts but sendingAudioRef is false, so no billing yet
@@ -228,37 +232,12 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
 
         socket.onclose = (event) => {
           console.log('[OpenAI Realtime] Connection closed:', event.code, event.reason)
-          const wasListening = sendingAudioRef.current
           sendingAudioRef.current = false
           setIsConnected(false)
           setIsListening(false)
-
-          // Auto-reconnect if the connection dropped unexpectedly while in use
-          // Code 1000 = normal close (we called it), 1005 = no status (browser closed)
-          if (event.code !== 1000 && wasListening && reconnectAttemptsRef.current < maxReconnectAttempts) {
-            reconnectAttemptsRef.current++
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 4000)
-            console.log(`[OpenAI Realtime] Auto-reconnecting (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}) in ${delay}ms...`)
-            setIsReconnecting(true)
-            setTimeout(async () => {
-              const success = await startSession()
-              if (success) {
-                console.log('[OpenAI Realtime] Reconnected successfully')
-                setIsReconnecting(false)
-                reconnectAttemptsRef.current = 0
-                onSessionStarted?.()
-              } else {
-                console.error('[OpenAI Realtime] Reconnect failed')
-                setIsReconnecting(false)
-                onError?.(new Error('Microphone reconnection failed. Please try again.'))
-                onDisconnect?.()
-              }
-            }, delay)
-          } else {
-            onDisconnect?.()
-          }
+          onDisconnect?.()
         }
-
+        
         // Timeout after 10 seconds
         setTimeout(() => {
           if (socket.readyState !== WebSocket.OPEN) {
@@ -303,13 +282,60 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     cleanup()
   }, [cleanup])
 
+  // Start recording mic audio for playback (parallel to STT)
+  const startRecording = useCallback(() => {
+    if (!streamRef.current) return false
+    recordingChunksRef.current = []
+
+    // Detect supported codec (webm for Chrome/Android, mp4 for iOS Safari)
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', '']
+    let mimeType = ''
+    for (const c of candidates) {
+      if (!c || MediaRecorder.isTypeSupported(c)) { mimeType = c; break }
+    }
+
+    try {
+      const options: MediaRecorderOptions = { audioBitsPerSecond: 64000 }
+      if (mimeType) options.mimeType = mimeType
+      const recorder = new MediaRecorder(streamRef.current, options)
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordingChunksRef.current.push(e.data)
+      }
+      recorder.start(250) // Collect chunks every 250ms
+      mediaRecorderRef.current = recorder
+      return true
+    } catch (err) {
+      console.warn('[Recording] MediaRecorder error:', err)
+      return false
+    }
+  }, [])
+
+  // Stop recording and return audio blob
+  const stopRecording = useCallback((): Promise<Blob | null> => {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') {
+      return Promise.resolve(null)
+    }
+    return new Promise<Blob | null>((resolve) => {
+      recorder.onstop = () => {
+        const mt = recorder.mimeType || 'audio/webm'
+        const blob = new Blob(recordingChunksRef.current, { type: mt })
+        recordingChunksRef.current = []
+        mediaRecorderRef.current = null
+        resolve(blob)
+      }
+      recorder.stop()
+    })
+  }, [])
+
   return {
     isConnected,
     isListening,
-    isReconnecting,
     startSession,    // Connect to OpenAI (but don't send audio yet)
     startListening,  // Start sending audio (billing begins)
     pauseListening,  // Stop sending audio (billing stops, connection kept)
     stopSession,     // Full disconnect
+    startRecording,  // Start recording mic for playback
+    stopRecording,   // Stop recording and get audio blob
   }
 }

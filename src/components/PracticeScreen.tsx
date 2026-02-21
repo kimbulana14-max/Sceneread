@@ -167,7 +167,6 @@ export function PracticeScreen() {
   const [matchedWordCount, setMatchedWordCount] = useState(0)
   const [hasError, setHasError] = useState(false)
   const [errorPopup, setErrorPopup] = useState<string | null>(null) // Shows what user got wrong
-  const [error, setError] = useState<string | null>(null) // System error banner
   const [animatedWordIndex, setAnimatedWordIndex] = useState(0) // Words lit up while speaking (gray→white)
   const [wordResults, setWordResults] = useState<Array<'correct' | 'wrong' | 'missing'>>([]) // Per-word results after evaluation
   // Build mode progress tracking
@@ -182,6 +181,14 @@ export function PracticeScreen() {
   const [consecutiveLineFails, setConsecutiveLineFails] = useState(0) // Track full line failures for restart-on-fail
   const [fullLineCompletions, setFullLineCompletions] = useState(0) // Track full line repetitions at end
   const [showStillThere, setShowStillThere] = useState(false) // Show "still there?" message
+  const [lastLineAccuracy, setLastLineAccuracy] = useState<number | null>(null) // Per-line accuracy %
+  const [coldReadExpired, setColdReadExpired] = useState(false) // Cold read timer expired
+  const [lastPickupTime, setLastPickupTime] = useState<number | null>(null) // Cue pickup ms
+  const [lastPacingDelta, setLastPacingDelta] = useState<{ userDuration: number; targetDuration: number; delta: number } | null>(null)
+  const [hasRecording, setHasRecording] = useState(false) // User recording available
+  const [isPlayingRecording, setIsPlayingRecording] = useState(false) // Playing back user recording
+  const [lineAttempts, setLineAttempts] = useState<Map<string, { correct: number; wrong: number; accuracies: number[] }>>(new Map())
+  const [weakLineFilter, setWeakLineFilter] = useState<string[] | null>(null) // Line IDs for drill mode
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null) // For mobile: single tap selects, double tap plays
   const lastTapRef = useRef<{ lineId: string; time: number } | null>(null) // For double tap detection
   
@@ -209,6 +216,16 @@ export function PracticeScreen() {
   const listenSessionRef = useRef<number>(0) // Session nonce to ignore stale transcripts
   const segmentsRef = useRef<string[]>([]) // Current segments (ref for async callbacks)
   const currentSegmentIndexRef = useRef<number>(0) // Current segment index (ref for async callbacks)
+  const pendingListenRef = useRef<(() => void) | null>(null) // Pending listen action when autoStartRecording is off
+  const aiFinishTimeRef = useRef<number>(0) // When AI audio finished playing
+  const speechStartTimeRef = useRef<number>(0) // When user first started speaking
+  const linePickupTimesRef = useRef<Map<string, number[]>>(new Map()) // Per-line pickup times
+  const targetDurationRef = useRef<number>(0) // Duration of AI audio for current line (ms)
+  const lastRecordingRef = useRef<Blob | null>(null) // Last recorded user audio
+  const playbackAudioRef = useRef<HTMLAudioElement | null>(null) // Audio element for recording playback
+  const randomQueueRef = useRef<number[]>([]) // Shuffled user-line indices for random order
+  const randomQueuePosRef = useRef<number>(0) // Current position in random queue
+  const pendingRandomUserLineRef = useRef<number | null>(null) // Prevents double-random-jump after cue
   
   // OpenAI Realtime - STT with filler word support
   const openaiRealtime = useOpenAIRealtime({
@@ -218,8 +235,22 @@ export function PracticeScreen() {
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
       
       console.log('[STT] Partial:', data.text)
-      const fullText = committedTextRef.current 
-        ? committedTextRef.current + ' ' + data.text 
+
+      // Track cue pickup speed: first speech after AI finished
+      const isFirstSpeech = !transcriptRef.current.trim() && !committedTextRef.current.trim()
+      if (isFirstSpeech && aiFinishTimeRef.current > 0) {
+        speechStartTimeRef.current = Date.now()
+        const pickupMs = Date.now() - aiFinishTimeRef.current
+        setLastPickupTime(pickupMs)
+        // Store per-line
+        const lineId = expectedLineRef.current // use expected text as key proxy
+        const existing = linePickupTimesRef.current.get(lineId) || []
+        existing.push(pickupMs)
+        linePickupTimesRef.current.set(lineId, existing)
+      }
+
+      const fullText = committedTextRef.current
+        ? committedTextRef.current + ' ' + data.text
         : data.text
       setTranscript(fullText)
       transcriptRef.current = fullText
@@ -264,10 +295,8 @@ export function PracticeScreen() {
       setMicReady(true)
       setStatus('idle')
     },
-    onError: (err) => {
-      console.error('[STT] Error:', err)
-      setError(err.message || 'Microphone error')
-      setTimeout(() => setError(null), 5000)
+    onError: (error) => {
+      console.error('[STT] Error:', error)
     },
     onDisconnect: () => {
       console.log('[STT] Disconnected')
@@ -392,7 +421,15 @@ export function PracticeScreen() {
       lineElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [currentLineIndex])
-  
+
+  // Cold read timer: show text briefly then hide
+  useEffect(() => {
+    if (settings.coldReadTime <= 0) return
+    setColdReadExpired(false)
+    const timer = setTimeout(() => setColdReadExpired(true), settings.coldReadTime * 1000)
+    return () => clearTimeout(timer)
+  }, [currentLineIndex, settings.coldReadTime])
+
   // Get scenes for current script
   const scriptScenes = scenes.filter(s => s.script_id === currentScript?.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
   const currentSceneData = scriptScenes[currentSceneIndex]
@@ -426,6 +463,7 @@ export function PracticeScreen() {
     busyRef.current = false
     setShowSceneTransition(false)
     setAutoAdvanceCountdown(null)
+    setWeakLineFilter(null)
     if (countdownRef.current) clearInterval(countdownRef.current)
   }, [currentSceneIndex])
 
@@ -450,11 +488,15 @@ export function PracticeScreen() {
   
   useEffect(() => { return () => cleanup() }, [])
   useEffect(() => { resetStats() }, [currentScript?.id])
-  useEffect(() => { 
-    if (isPlaying && status === 'idle' && currentLine && !busyRef.current) { 
-      if (learningMode === 'listen') playCurrentLine(); 
-      else if (micReady) playCurrentLine() 
-    } 
+  useEffect(() => {
+    if (isPlaying && status === 'idle' && currentLine && !busyRef.current) {
+      // Build random queue on first play if random order is enabled
+      if (settings.randomOrder && learningMode !== 'listen' && randomQueueRef.current.length === 0) {
+        buildRandomQueue()
+      }
+      if (learningMode === 'listen') playCurrentLine();
+      else if (micReady) playCurrentLine()
+    }
   }, [isPlaying, micReady, status, currentLineIndex, learningMode])
 
   const cleanup = () => {
@@ -467,36 +509,23 @@ export function PracticeScreen() {
     setMicReady(false)
   }
 
-  const connectMic = async (retryCount = 0) => {
+  const connectMic = async () => {
     setStatus('connecting')
     try {
       console.log('[STT] Starting session (audio paused until listening)...')
-
+      
       // OpenAI Realtime - connects but doesn't send audio yet
       const success = await openaiRealtime.startSession()
       if (!success) {
-        throw new Error('Failed to connect to microphone')
+        throw new Error('Failed to connect')
       }
-
+      
       console.log('[STT] Session connected (audio paused)')
-
-    } catch (e: any) {
+      
+    } catch (e) { 
       console.error('[STT] Failed to connect:', e)
-
-      // Retry up to 2 times with increasing delay
-      if (retryCount < 2) {
-        const delay = 1000 * (retryCount + 1)
-        console.log(`[STT] Retrying in ${delay}ms (attempt ${retryCount + 2}/3)...`)
-        setError(`Connecting microphone... (attempt ${retryCount + 2}/3)`)
-        await new Promise(r => setTimeout(r, delay))
-        setError(null)
-        return connectMic(retryCount + 1)
-      }
-
-      setError('Could not connect microphone. Check permissions and try again.')
-      setTimeout(() => setError(null), 5000)
       setStatus('idle')
-      setIsPlaying(false)
+      setIsPlaying(false) 
     }
   }
 
@@ -521,8 +550,19 @@ export function PracticeScreen() {
     setConsecutiveWrongs(0)
     setFullLineCompletions(0)
     setShowStillThere(false)
+    pendingRandomUserLineRef.current = null
+    // Clean up recording playback
+    if (playbackAudioRef.current) {
+      playbackAudioRef.current.pause()
+      playbackAudioRef.current = null
+    }
+    lastRecordingRef.current = null
+    setHasRecording(false)
+    setIsPlayingRecording(false)
+    // Clear weak line drill
+    setWeakLineFilter(null)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
-    resetStats() 
+    resetStats()
   }
   
   const goTo = (index: number, play = false) => { 
@@ -612,8 +652,80 @@ export function PracticeScreen() {
     }
   }
   
-  const next = () => { 
-    
+  // Fisher-Yates shuffle for random line order
+  const buildRandomQueue = () => {
+    const userIndices = playableLines
+      .map((line, i) => ({ line, i }))
+      .filter(({ line }) => line.is_user_line)
+      .map(({ i }) => i)
+    for (let i = userIndices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [userIndices[i], userIndices[j]] = [userIndices[j], userIndices[i]]
+    }
+    randomQueueRef.current = userIndices
+    randomQueuePosRef.current = 0
+    pendingRandomUserLineRef.current = null
+  }
+
+  const next = () => {
+    // If we just played a cue line for a pending random user line, go to that user line
+    if (pendingRandomUserLineRef.current !== null) {
+      const userIdx = pendingRandomUserLineRef.current
+      pendingRandomUserLineRef.current = null
+      goTo(userIdx, isPlayingRef.current)
+      return
+    }
+
+    // Weak line drill mode: only visit weak lines
+    if (weakLineFilter && weakLineFilter.length > 0) {
+      // Find next weak line after current index
+      const weakIndices = weakLineFilter
+        .map(id => playableLines.findIndex(l => l.id === id))
+        .filter(i => i >= 0)
+        .sort((a, b) => a - b)
+      const nextWeak = weakIndices.find(i => i > currentLineIndex)
+      if (nextWeak !== undefined) {
+        // Find cue line before weak line
+        const cueIdx = nextWeak > 0 && !playableLines[nextWeak - 1]?.is_user_line
+          ? nextWeak - 1 : nextWeak
+        goTo(cueIdx, isPlayingRef.current)
+      } else {
+        // All weak lines drilled — show summary
+        setWeakLineFilter(null)
+        setShowSummary(true)
+        setIsPlaying(false)
+      }
+      return
+    }
+
+    // Random line order: jump to next shuffled user line
+    if (settings.randomOrder && learningMode !== 'listen') {
+      const pos = randomQueuePosRef.current
+      if (pos < randomQueueRef.current.length) {
+        const nextUserIdx = randomQueueRef.current[pos]
+        randomQueuePosRef.current = pos + 1
+        // Find cue line (AI line right before this user line)
+        const cueIdx = nextUserIdx > 0 && !playableLines[nextUserIdx - 1]?.is_user_line
+          ? nextUserIdx - 1 : nextUserIdx
+        if (cueIdx !== nextUserIdx) {
+          // Play cue first, then advance to user line
+          pendingRandomUserLineRef.current = nextUserIdx
+          goTo(cueIdx, isPlayingRef.current)
+        } else {
+          goTo(nextUserIdx, isPlayingRef.current)
+        }
+      } else {
+        // All user lines visited
+        if (loop) {
+          buildRandomQueue()
+          next()
+        } else {
+          handleSceneComplete()
+        }
+      }
+      return
+    }
+
     if (currentLineIndex < playableLines.length - 1) {
       goTo(currentLineIndex + 1, isPlayingRef.current)
     } else {
@@ -688,8 +800,6 @@ export function PracticeScreen() {
       if (!response.ok) {
         const errorText = await response.text()
         console.warn('Google TTS failed, status:', response.status, 'error:', errorText)
-        setError('Voice playback unavailable. Audio may still be generating.')
-        setTimeout(() => setError(null), 4000)
         return
       }
       
@@ -724,7 +834,15 @@ export function PracticeScreen() {
           }
           audio.load()
         })
-        audioRef.current.playbackRate = settings.playbackSpeed // Set after load
+        let ttsRate = settings.playbackSpeed
+        if (settings.partnerSpeedVariation && !currentLine?.is_user_line) {
+          ttsRate *= 0.85 + Math.random() * 0.30
+        }
+        audioRef.current.playbackRate = ttsRate // Set after load
+        // Capture target duration for pacing comparison (actual playback time in ms)
+        if (audioRef.current.duration && isFinite(audioRef.current.duration)) {
+          targetDurationRef.current = (audioRef.current.duration / ttsRate) * 1000
+        }
         audioRef.current.currentTime = 0 // Reset again after load just in case
         console.log('[TTS] Audio element ready, volume:', audioRef.current.volume, 'muted:', audioRef.current.muted, 'currentTime:', audioRef.current.currentTime)
         await audioRef.current.play()
@@ -737,10 +855,8 @@ export function PracticeScreen() {
       } else {
         console.warn('[TTS] No audioRef.current!')
       }
-    } catch (e: any) {
+    } catch (e) {
       console.warn('Live TTS error:', e)
-      setError('Voice playback failed. Check your connection.')
-      setTimeout(() => setError(null), 4000)
     }
   }
   
@@ -974,16 +1090,23 @@ export function PracticeScreen() {
           audio.addEventListener('error', onError);
           audio.load();
         });
-        audioRef.current.playbackRate = settings.playbackSpeed; // Set after load
-        await audioRef.current.play(); 
-        await new Promise(r => { if (audioRef.current) audioRef.current.onended = r }); 
+        let audioRate = settings.playbackSpeed
+        if (settings.partnerSpeedVariation && !currentLine?.is_user_line) {
+          audioRate *= 0.85 + Math.random() * 0.30
+        }
+        audioRef.current.playbackRate = audioRate; // Set after load
+        // Capture target duration for pacing comparison
+        if (audioRef.current.duration && isFinite(audioRef.current.duration)) {
+          targetDurationRef.current = (audioRef.current.duration / audioRate) * 1000
+        }
+        await audioRef.current.play();
+        await new Promise(r => { if (audioRef.current) audioRef.current.onended = r });
       } catch (e) {
         console.warn('Audio playback error:', e);
       }
     } else {
-      console.warn('[Audio] No audio URL available for line')
       await new Promise(r => setTimeout(r, 200));
-    }
+    } 
   }
 
   const stopPlayback = () => {
@@ -1056,9 +1179,22 @@ export function PracticeScreen() {
         await playSegmentLiveTTS(accumulatedText)
         
         if (!isPlayingRef.current) { busyRef.current = false; return } // User paused during TTS
-        
+
+        // Wait before listening (same as practice mode)
+        if (settings.waitForMeDelay > 0) {
+          await new Promise(r => setTimeout(r, settings.waitForMeDelay))
+          if (!isPlayingRef.current) { busyRef.current = false; return }
+        }
+
         // Start listening with 3.5s silence timeout
-        startListeningForBuild(accumulatedText)
+        aiFinishTimeRef.current = Date.now()
+        if (settings.autoStartRecording) {
+          startListeningForBuild(accumulatedText)
+        } else {
+          // Wait for user to tap play/mic to start recording
+          pendingListenRef.current = () => startListeningForBuild(accumulatedText)
+          setStatus('idle')
+        }
         busyRef.current = false
         return
       } else {
@@ -1150,8 +1286,16 @@ export function PracticeScreen() {
         return
       }
       
-      startListening()
-    } else { 
+      aiFinishTimeRef.current = Date.now()
+      if (settings.autoStartRecording) {
+        startListening()
+      } else {
+        // Wait for user to tap play/mic to start recording
+        pendingListenRef.current = () => startListening()
+        setStatus('idle')
+        busyRef.current = false
+      }
+    } else {
       setStatus(isNarrator ? 'narrator' : 'ai')
       if (!isNarrator) {
         const charVoice = characters.find(c => c.name === currentLine.character_name)?.voice_id
@@ -1287,8 +1431,8 @@ export function PracticeScreen() {
     listeningRef.current = true
     lastSpeechRef.current = Date.now()
     setStatus('listening')
-    playYourTurn()
-    
+    if (settings.playYourTurnCue) playYourTurn()
+
     // CRITICAL: Start sending audio to OpenAI (billing starts here)
     // If connection died, reconnect first
     let started = openaiRealtime.startListening()
@@ -1298,14 +1442,15 @@ export function PracticeScreen() {
       started = openaiRealtime.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
-        setError('Microphone disconnected. Tap play to retry.')
-        setTimeout(() => setError(null), 5000)
         setStatus('idle')
         listeningRef.current = false
         return
       }
     }
-    
+
+    // Start recording user audio for playback
+    openaiRealtime.startRecording()
+
     // Timeout if no speech, emergency fallback
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
@@ -1318,6 +1463,7 @@ export function PracticeScreen() {
         handleBuildTimeout();
       }
       else if (silenceMs > settings.silenceDuration && hasTranscript) {
+        // Use user's silence duration setting for build mode
         console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms')
         finishListeningRef.current();
       }
@@ -1374,20 +1520,20 @@ export function PracticeScreen() {
     transcriptRef.current = ''; 
     committedTextRef.current = ''; 
     lockedStateRef.current = createFreshLockedState();
-    expectedLineRef.current = stripParentheticals(currentLine?.content || ''); 
-    setTranscript(''); 
-    setMissingWords([]); 
-    setWrongWords([]); 
-    setMatchedWordCount(0); 
-    setHasError(false); 
+    expectedLineRef.current = stripParentheticals(currentLine?.content || '');
+    setTranscript('');
+    setMissingWords([]);
+    setWrongWords([]);
+    setMatchedWordCount(0);
+    setHasError(false);
     // Reset word animation and results
     accumulatedAudioRef.current = 0
     setAnimatedWordIndex(0)
     setWordResults([])
-    listeningRef.current = true; 
+    listeningRef.current = true;
     lastSpeechRef.current = Date.now();
     setStatus('listening');
-    
+
     // CRITICAL: Start sending audio to OpenAI (billing starts here)
     // If connection died, reconnect first
     let started = openaiRealtime.startListening()
@@ -1397,14 +1543,15 @@ export function PracticeScreen() {
       started = openaiRealtime.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
-        setError('Microphone disconnected. Tap play to retry.')
-        setTimeout(() => setError(null), 5000)
         setStatus('idle')
         listeningRef.current = false
         return
       }
     }
-    
+
+    // Start recording user audio for playback
+    openaiRealtime.startRecording()
+
     // Silence timer - evaluate after 1.0s of silence
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
@@ -1414,7 +1561,7 @@ export function PracticeScreen() {
       }
       const silenceMs = Date.now() - lastSpeechRef.current
       if (silenceMs > settings.silenceDuration && transcriptRef.current.trim()) {
-        console.log(`[Silence] ${settings.silenceDuration}ms timeout - evaluating transcript`)
+        console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
         finishListeningRef.current()
       }
     }, 250)
@@ -1446,8 +1593,6 @@ export function PracticeScreen() {
       started = openaiRealtime.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
-        setError('Microphone disconnected. Tap play to retry.')
-        setTimeout(() => setError(null), 5000)
         setStatus('idle')
         listeningRef.current = false
         return
@@ -1463,7 +1608,7 @@ export function PracticeScreen() {
       }
       const silenceMs = Date.now() - lastSpeechRef.current
       if (silenceMs > settings.silenceDuration && transcriptRef.current.trim()) {
-        console.log(`[Silence] ${settings.silenceDuration}ms timeout - evaluating transcript`)
+        console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
         finishListeningRef.current()
       }
     }, 250)
@@ -1472,19 +1617,39 @@ export function PracticeScreen() {
   const finishListening = useCallback(() => {
     if (!listeningRef.current) return
     listeningRef.current = false
-    
+
     // CRITICAL: Stop sending audio to OpenAI immediately (billing stops)
     openaiRealtime.pauseListening()
-    
+
+    // Stop recording and store blob for playback
+    openaiRealtime.stopRecording().then(blob => {
+      if (blob && blob.size > 0) {
+        lastRecordingRef.current = blob
+        setHasRecording(true)
+      } else {
+        setHasRecording(false)
+      }
+    })
+
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
     
     const spoken = transcriptRef.current.trim()
-    
+
+    // Calculate pacing comparison
+    const userDuration = speechStartTimeRef.current > 0 ? Date.now() - speechStartTimeRef.current : 0
+    const targetDuration = targetDurationRef.current
+    if (userDuration > 0 && targetDuration > 0) {
+      const delta = ((userDuration - targetDuration) / targetDuration) * 100
+      setLastPacingDelta({ userDuration, targetDuration, delta })
+    } else {
+      setLastPacingDelta(null)
+    }
+
     // Use refs for current values (state may be stale in async callbacks)
     const segs = segmentsRef.current
     const segIdx = currentSegmentIndexRef.current
-    
+
     console.log('[finishListening] spoken:', spoken, 'expected:', expectedLineRef.current, 'segIdx:', segIdx, 'segs.length:', segs.length)
     
     if (!spoken || !currentLine) { 
@@ -1542,11 +1707,27 @@ export function PracticeScreen() {
       return 
     }
     
-    const result = checkAccuracy(expectedLineRef.current, spoken)
+    const result = checkAccuracy(expectedLineRef.current, spoken, settings.strictMode)
     setTranscript(spoken)
     setMissingWords(result.missingWords)
     setWrongWords(result.wrongWords)
-    
+    setLastLineAccuracy(result.accuracy)
+
+    // Track per-line attempts for weak line report (functional setState to avoid dep issues)
+    if (currentLine?.id) {
+      const lineId = currentLine.id
+      setLineAttempts(prev => {
+        const updated = new Map(prev)
+        const entry = updated.get(lineId) || { correct: 0, wrong: 0, accuracies: [] }
+        updated.set(lineId, {
+          correct: entry.correct + (result.isCorrect ? 1 : 0),
+          wrong: entry.wrong + (result.isCorrect ? 0 : 1),
+          accuracies: [...entry.accuracies, result.accuracy],
+        })
+        return updated
+      })
+    }
+
     console.log('[finishListening] result.isCorrect:', result.isCorrect, 'expected:', expectedLineRef.current)
     
     if (result.isCorrect) {
@@ -1611,7 +1792,7 @@ export function PracticeScreen() {
             }
             recordLineCompletion(user?.id || '') // Track for streaks
             setStatus('correct')
-            setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, 500)
+            setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, settings.autoAdvanceDelay)
           }
         } else {
           // Advance to next segment and auto-play
@@ -1640,7 +1821,7 @@ export function PracticeScreen() {
         markLineCompleted(scriptId, currentLine.id)
       }
       recordLineCompletion(user?.id || '') // Track for streaks
-      if (settings.autoAdvanceOnCorrect) setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, 500)
+      if (settings.autoAdvanceOnCorrect) setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, settings.autoAdvanceDelay)
       else busyRef.current = false
     } else {
       if (settings.playSoundOnWrong) playIncorrect()
@@ -1659,7 +1840,12 @@ export function PracticeScreen() {
         : 'Try again'
       setErrorPopup(errorMsg)
       setTimeout(() => setErrorPopup(null), 2500) // Hide after 2.5s
-      
+
+      // Speak error feedback via TTS (fire-and-forget, doesn't block flow)
+      if (settings.speakErrorFeedback && errorMsg !== 'Try again') {
+        playSegmentLiveTTS(errorMsg).catch(() => {})
+      }
+
       if (learningMode === 'repeat' && segs.length > 0) {
         // Reset timeout counter on wrong answer
         setConsecutiveTimeouts(0)
@@ -1751,7 +1937,7 @@ export function PracticeScreen() {
         }
       }
     }
-  }, [currentLine, settings.autoAdvanceOnCorrect, settings.autoRepeatOnWrong, settings.repeatFullLineTimes, settings.restartOnFail, settings.repeatFullLineOnFail, learningMode, segments, currentSegmentIndex, lastCheckpoint, consecutiveWrongs, consecutiveLineFails, fullLineCompletions])
+  }, [currentLine, settings.autoAdvanceOnCorrect, settings.autoAdvanceDelay, settings.autoRepeatOnWrong, settings.repeatFullLineTimes, settings.restartOnFail, settings.repeatFullLineOnFail, settings.strictMode, learningMode, segments, currentSegmentIndex, lastCheckpoint, consecutiveWrongs, consecutiveLineFails, fullLineCompletions])
   
   useEffect(() => { finishListeningRef.current = finishListening }, [finishListening])
   
@@ -1774,15 +1960,45 @@ export function PracticeScreen() {
     busyRef.current = false
   }
   
-  const retry = () => { 
+  const retry = () => {
     busyRef.current = false
     setStatus('idle')
-    if (learningMode === 'repeat' && segments.length > 0) { 
+    if (learningMode === 'repeat' && segments.length > 0) {
       // In build mode, retry plays the accumulated segments again
-      setTimeout(() => playCurrentLine(), 100) 
+      setTimeout(() => playCurrentLine(), 100)
     } else {
-      setTimeout(startListening, 100) 
+      setTimeout(startListening, 100)
     }
+  }
+
+  // Play back user's last recording
+  const playLastRecording = () => {
+    if (!lastRecordingRef.current) return
+    if (isPlayingRecording && playbackAudioRef.current) {
+      playbackAudioRef.current.pause()
+      playbackAudioRef.current = null
+      setIsPlayingRecording(false)
+      return
+    }
+    const url = URL.createObjectURL(lastRecordingRef.current)
+    const audio = new Audio(url)
+    playbackAudioRef.current = audio
+    setIsPlayingRecording(true)
+    audio.onended = () => {
+      URL.revokeObjectURL(url)
+      playbackAudioRef.current = null
+      setIsPlayingRecording(false)
+    }
+    audio.onerror = () => {
+      URL.revokeObjectURL(url)
+      playbackAudioRef.current = null
+      setIsPlayingRecording(false)
+    }
+    audio.play().catch(() => {
+      URL.revokeObjectURL(url)
+      playbackAudioRef.current = null
+      setIsPlayingRecording(false)
+    })
   }
   
   const handlePlayPause = async () => {
@@ -1793,6 +2009,13 @@ export function PracticeScreen() {
     if (isPlaying || status !== 'idle') {
       stopPlayback()
       stopListening()
+      pendingListenRef.current = null
+    } else if (pendingListenRef.current) {
+      // User manually starting recording (autoStartRecording off)
+      const pendingFn = pendingListenRef.current
+      pendingListenRef.current = null
+      setIsPlaying(true)
+      pendingFn()
     } else {
       // Clear "still there" prompt when manually pressing play
       setShowStillThere(false)
@@ -1822,17 +2045,74 @@ export function PracticeScreen() {
   if (showSummary) {
     const total = stats.correct + stats.wrong
     const accuracy = total > 0 ? Math.round((stats.correct / total) * 100) : 0
+    const allPickups = Array.from(linePickupTimesRef.current.values()).flat()
+    const avgPickup = allPickups.length > 0 ? allPickups.reduce((a, b) => a + b, 0) / allPickups.length : 0
+    // Compute weak lines: sorted by wrong count desc, then low avg accuracy
+    const weakLines = Array.from(lineAttempts.entries())
+      .map(([id, data]) => ({
+        id,
+        ...data,
+        avgAccuracy: data.accuracies.length > 0 ? Math.round(data.accuracies.reduce((a, b) => a + b, 0) / data.accuracies.length) : 0,
+        line: playableLines.find(l => l.id === id),
+      }))
+      .filter(w => w.wrong > 0 || w.avgAccuracy < 80)
+      .sort((a, b) => b.wrong - a.wrong || a.avgAccuracy - b.avgAccuracy)
+      .slice(0, 5)
     return (
-      <div className="h-full flex items-center justify-center p-6 pb-24">
+      <div className="h-full flex items-center justify-center p-6 pb-24 overflow-y-auto">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-w-sm">
           <Card padding="p-6" className="text-center">
             <div className="text-4xl mb-4 text-accent font-bold">{accuracy}%</div>
             <h2 className="font-display text-2xl text-text mb-4">Complete</h2>
             {learningMode !== 'listen' && (
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="p-3 bg-green-500/10 rounded-lg"><div className="text-2xl font-bold text-green-400">{stats.correct}</div><div className="text-xs text-text-muted">Correct</div></div>
-                <div className="p-3 bg-red-500/10 rounded-lg"><div className="text-2xl font-bold text-red-400">{stats.wrong}</div><div className="text-xs text-text-muted">Mistakes</div></div>
-              </div>
+              <>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="p-3 bg-success-muted rounded-lg"><div className="text-2xl font-bold text-success">{stats.correct}</div><div className="text-xs text-text-muted">Correct</div></div>
+                  <div className="p-3 bg-error-muted rounded-lg"><div className="text-2xl font-bold text-error">{stats.wrong}</div><div className="text-xs text-text-muted">Mistakes</div></div>
+                </div>
+                {allPickups.length > 0 && (
+                  <div className="p-3 bg-ai-muted rounded-lg mb-4">
+                    <div className="text-lg font-bold text-ai">{(avgPickup / 1000).toFixed(1)}s</div>
+                    <div className="text-xs text-text-muted">Avg Cue Pickup</div>
+                  </div>
+                )}
+                {weakLines.length > 0 && (
+                  <div className="text-left mb-4">
+                    <div className="text-sm font-semibold text-text mb-2">Problem Lines</div>
+                    <div className="space-y-1.5">
+                      {weakLines.map(w => (
+                        <div key={w.id} className="p-2 bg-error-muted rounded-lg text-xs">
+                          <div className="text-text truncate">{w.line?.content || 'Unknown'}</div>
+                          <div className="flex gap-3 text-text-muted mt-0.5">
+                            <span className="text-error">{w.wrong} wrong</span>
+                            <span className="text-success">{w.correct} correct</span>
+                            <span className="text-warning">{w.avgAccuracy}% avg</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const ids = weakLines.map(w => w.id)
+                        setWeakLineFilter(ids)
+                        setShowSummary(false)
+                        setStats({ correct: 0, wrong: 0, completed: new Set() })
+                        // Jump to first weak line
+                        const firstIdx = playableLines.findIndex(l => ids.includes(l.id))
+                        if (firstIdx >= 0) {
+                          const cueIdx = firstIdx > 0 && !playableLines[firstIdx - 1]?.is_user_line
+                            ? firstIdx - 1 : firstIdx
+                          goTo(cueIdx, true)
+                        }
+                      }}
+                      className="w-full mt-3"
+                    >
+                      Drill Weak Lines ({weakLines.length})
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
             <Button onClick={() => { setShowSummary(false); setCurrentSceneIndex(0); goTo(0); fullReset() }} className="w-full mb-2">Again</Button>
             <Button variant="secondary" onClick={() => setActiveTab('library')} className="w-full">Back to Library</Button>
@@ -1857,37 +2137,7 @@ export function PracticeScreen() {
   return (
     <div className="h-full flex flex-col bg-bg practice-screen">
       <audio ref={audioRef} preload="auto" />
-
-      {/* System error banner */}
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="mx-4 mt-2 px-4 py-2.5 bg-error/15 border border-error/30 rounded-lg text-error text-sm text-center"
-          >
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Reconnecting indicator */}
-      <AnimatePresence>
-        {openaiRealtime.isReconnecting && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="mx-4 mt-2 px-4 py-2.5 bg-warning/15 border border-warning/30 rounded-lg text-warning text-sm text-center flex items-center justify-center gap-2"
-          >
-            <div className="w-3.5 h-3.5 border-2 border-warning border-t-transparent rounded-full animate-spin" />
-            Reconnecting microphone...
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-
+      
       {/* Minimal Header */}
       <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b border-border/30">
         <button onClick={() => setActiveTab('library')} className="text-text-muted hover:text-text p-1 -ml-1">
@@ -1914,11 +2164,11 @@ export function PracticeScreen() {
         )}
         
         <div className="flex items-center gap-2">
-          {micReady && <span className="w-2 h-2 rounded-full bg-green-500" />}
+          {micReady && <span className="w-2 h-2 rounded-full bg-success" />}
           {/* Notes visibility toggle */}
           <button 
             onClick={() => setShowNotes(!showNotes)} 
-            className={`p-2 rounded-full transition-colors ${showNotes ? 'text-blue-400' : 'text-text-subtle'}`}
+            className={`p-2 rounded-full transition-colors ${showNotes ? 'text-ai' : 'text-text-subtle'}`}
             title={showNotes ? 'Hide notes' : 'Show notes'}
           >
             {showNotes ? (
@@ -2184,15 +2434,21 @@ export function PracticeScreen() {
                     value={settings.playSoundOnCorrect} 
                     onChange={v => updateSettings({ playSoundOnCorrect: v })} 
                   />
-                  <SettingsToggle 
-                    label="Sound on wrong" 
-                    value={settings.playSoundOnWrong} 
-                    onChange={v => updateSettings({ playSoundOnWrong: v })} 
+                  <SettingsToggle
+                    label="Sound on wrong"
+                    value={settings.playSoundOnWrong}
+                    onChange={v => updateSettings({ playSoundOnWrong: v })}
                   />
-                  <SettingsToggle 
-                    label="Speak character names" 
-                    value={settings.speakCharacterNames} 
-                    onChange={v => updateSettings({ speakCharacterNames: v })} 
+                  <SettingsToggle
+                    label="Speak error feedback"
+                    value={settings.speakErrorFeedback}
+                    onChange={v => updateSettings({ speakErrorFeedback: v })}
+                  />
+                  <p className="text-xs text-text-muted ml-0 mb-3">AI speaks what you got wrong</p>
+                  <SettingsToggle
+                    label="Speak character names"
+                    value={settings.speakCharacterNames}
+                    onChange={v => updateSettings({ speakCharacterNames: v })}
                   />
                   <p className="text-xs text-text-muted ml-0 mb-3">Announce who's speaking before each line</p>
                   <SettingsToggle 
@@ -2243,20 +2499,31 @@ export function PracticeScreen() {
                       <p className="text-xs text-text-muted ml-0 mb-3">{settings.repeatFullLineOnFail ? 'Go back to first line after failing same line twice' : 'Go back to first line when you fail'}</p>
                     </>
                   )}
-                  <SettingsToggle 
-                    label="Loop scene" 
-                    value={loop} 
-                    onChange={setLoop} 
+                  <SettingsToggle
+                    label="Loop scene"
+                    value={loop}
+                    onChange={setLoop}
                   />
-                  <SettingsToggle 
-                    label="Auto-start recording" 
+                  <SettingsToggle
+                    label="Random line order"
+                    value={settings.randomOrder}
+                    onChange={v => { updateSettings({ randomOrder: v }); if (v) buildRandomQueue() }}
+                  />
+                  <p className="text-xs text-text-muted ml-0 mb-3">Shuffle your lines to test true memorization</p>
+                  <SettingsToggle
+                    label="Auto-start recording"
                     value={settings.autoStartRecording} 
                     onChange={v => updateSettings({ autoStartRecording: v })} 
                   />
-                  <SettingsToggle 
-                    label="Show live transcript" 
-                    value={settings.showLiveTranscript} 
-                    onChange={v => updateSettings({ showLiveTranscript: v })} 
+                  <SettingsToggle
+                    label="Show live transcript"
+                    value={settings.showLiveTranscript}
+                    onChange={v => updateSettings({ showLiveTranscript: v })}
+                  />
+                  <SettingsToggle
+                    label="Show accuracy score"
+                    value={settings.showAccuracyScore}
+                    onChange={v => updateSettings({ showAccuracyScore: v })}
                   />
                 </div>
 
@@ -2315,6 +2582,13 @@ export function PracticeScreen() {
                   <p className="text-xs text-text-muted ml-0 mb-3">AI will speak your lines too - useful for listening practice</p>
                 </div>
 
+                <SettingsToggle
+                  label="Partner speed variation"
+                  value={settings.partnerSpeedVariation}
+                  onChange={v => updateSettings({ partnerSpeedVariation: v })}
+                />
+                <p className="text-xs text-text-muted ml-0 mb-3">Randomly vary AI partner's speed to simulate unpredictability</p>
+
                 {/* Before/After visibility */}
                 <div className="space-y-3">
                   <SettingsToggle 
@@ -2366,6 +2640,42 @@ export function PracticeScreen() {
                     </>
                   )}
                 </div>
+
+                {/* Cold read timer */}
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-sm font-medium text-text">Cold read timer</label>
+                    <span className="text-sm font-medium text-accent">{settings.coldReadTime > 0 ? `${settings.coldReadTime}s` : 'Off'}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={settings.coldReadTime}
+                    onChange={(e) => updateSettings({ coldReadTime: Number(e.target.value) })}
+                    className="w-full accent-accent"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Show text briefly then apply visibility setting</p>
+                </div>
+
+                {/* Cue-only words */}
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-sm font-medium text-text">Cue-only words</label>
+                    <span className="text-sm font-medium text-accent">{settings.cueOnlyWords > 0 ? `${settings.cueOnlyWords} words` : 'Off'}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={settings.cueOnlyWords}
+                    onChange={(e) => updateSettings({ cueOnlyWords: Number(e.target.value) })}
+                    className="w-full accent-accent"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Show only the first N words of your lines as a cue</p>
+                </div>
               </div>
 
               {/* Sticky footer with Done button */}
@@ -2402,7 +2712,7 @@ export function PracticeScreen() {
               >
                 <div 
                   onClick={() => canInteract && goTo(i, true)}
-                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-purple-500/15 text-purple-300 ring-1 ring-purple-500/30' : 'bg-white/5 text-text-muted'}`}
+                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/15 text-ai ring-1 ring-ai/30' : 'bg-white/5 text-text-muted'}`}
                 >
                   {line.content}
                   <button
@@ -2449,15 +2759,15 @@ export function PracticeScreen() {
               key={line.id} 
               ref={(el) => { if (el) lineRefs.current.set(i, el) }}
               animate={{ scale: isCurrent ? 1.01 : 1 }} 
-              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/10 ring-1 ring-accent/30' : 'bg-ai/10 ring-1 ring-ai/30') : isDone ? 'bg-green-500/5' : ''} ${isSelected ? 'ring-2 ring-white/30' : ''}`}
+              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/10 ring-1 ring-accent/30' : 'bg-ai/10 ring-1 ring-ai/30') : isDone ? 'bg-success/5' : ''} ${isSelected ? 'ring-2 ring-white/30' : ''}`}
             >
               <div className="p-3" onClick={handleLineTap}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`text-xs font-bold ${isUser ? 'text-accent' : 'text-ai'}`}>{line.character_name}</span>
-                  {isDone && <IconCheck size={10} className="text-green-500" />}
+                  {isDone && <IconCheck size={10} className="text-success" />}
                   {charVoice?.voice_name && <span className="text-[10px] text-text-subtle px-1 py-0.5 bg-white/5 rounded">{charVoice.voice_name}</span>}
-                  {(line.parenthetical || line.delivery_note) && <span className="text-[10px] text-yellow-400/80 italic">({line.parenthetical || line.delivery_note})</span>}
-                  {line.notes && <span className="text-[10px] text-blue-400 font-medium">•</span>}
+                  {(line.parenthetical || line.delivery_note) && <span className="text-[10px] text-warning/80 italic">({line.parenthetical || line.delivery_note})</span>}
+                  {line.notes && <span className="text-[10px] text-ai font-medium">•</span>}
                   
                   {/* Action buttons - show on hover OR when selected (for mobile) */}
                   <div className={`ml-auto flex gap-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -2480,7 +2790,7 @@ export function PracticeScreen() {
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: { ...line, afterLineId: line.id, script_id: line.script_id, scene_id: line.scene_id, sort_order: line.sort_order + 1 }, mode: 'add' }); setSelectedLineId(null) }}
-                      className="p-1 rounded hover:bg-white/10 text-text-muted hover:text-green-400"
+                      className="p-1 rounded hover:bg-white/10 text-text-muted hover:text-success"
                       title="Add line after"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -2540,23 +2850,23 @@ export function PracticeScreen() {
                           if (useWordResults) {
                             // Show word-by-word results after evaluation
                             if (wordResult === 'correct') {
-                              colorClass = 'text-green-400'
+                              colorClass = 'text-success'
                             } else if (wordResult === 'wrong') {
-                              colorClass = 'text-red-400 underline decoration-red-400'
+                              colorClass = 'text-error underline decoration-error'
                             } else if (wordResult === 'missing') {
-                              colorClass = 'text-yellow-400/70 underline decoration-yellow-400/50'
+                              colorClass = 'text-warning/70 underline decoration-warning/50'
                             }
                           } else if (status === 'listening') {
                             // While listening: animate gray → white → green
                             if (currentWordIndex < matchedWordCount) {
-                              colorClass = 'text-green-400'
+                              colorClass = 'text-success'
                             } else if (hasError && currentWordIndex === matchedWordCount) {
-                              colorClass = 'text-red-400 underline decoration-red-400'
+                              colorClass = 'text-error underline decoration-error'
                             } else if (isAnimated) {
                               colorClass = 'text-text'
                             }
                           } else if (status === 'correct') {
-                            colorClass = 'text-green-400'
+                            colorClass = 'text-success'
                           } else if (isBuilt) {
                             colorClass = 'text-accent underline decoration-accent/50 decoration-2 underline-offset-2'
                           }
@@ -2584,18 +2894,29 @@ export function PracticeScreen() {
                     
                     // Determine which visibility mode to use
                     const isCompleted = stats.completed.has(line.id)
-                    const visibility = settings.useBeforeAfterVisibility
+                    let visibility = settings.useBeforeAfterVisibility
                       ? (isCompleted ? settings.visibilityAfterSpeaking : settings.visibilityBeforeSpeaking)
                       : settings.textVisibility
+                    // Cold read: show full text briefly, then apply visibility
+                    if (isCurrent && settings.coldReadTime > 0 && !coldReadExpired) {
+                      visibility = 'full'
+                    }
                     
                     const getVisibilityClass = () => {
                       if (visibility === 'blurred') return 'blur-[6px] hover:blur-none transition-all'
                       if (visibility === 'hidden') return 'opacity-0'
                       return ''
                     }
-                    const displayText = visibility === 'first-letter' 
-                      ? transformText(line.content, 'first-letter') 
+                    let displayText = visibility === 'first-letter'
+                      ? transformText(line.content, 'first-letter')
                       : line.content
+                    // Cue-only: show only first N words
+                    if (settings.cueOnlyWords > 0 && visibility === 'full') {
+                      const words = displayText.split(' ')
+                      if (words.length > settings.cueOnlyWords) {
+                        displayText = words.slice(0, settings.cueOnlyWords).join(' ') + ' ...'
+                      }
+                    }
                     return (
                       <p className={`text-sm leading-relaxed text-text ${getVisibilityClass()}`}>
                         {visibility === 'hidden' ? <span className="opacity-30">•••</span> : displayText}
@@ -2603,7 +2924,22 @@ export function PracticeScreen() {
                     )
                   })()
                 )}
-                {showNotes && line.notes && <p className="text-xs text-blue-400/70 mt-1.5 italic border-l-2 border-blue-500/30 pl-2">{line.notes}</p>}
+                {showNotes && line.notes && <p className="text-xs text-ai/70 mt-1.5 italic border-l-2 border-ai-border pl-2">{line.notes}</p>}
+                {isCurrent && isUser && status === 'correct' && (
+                  <div className="mt-1 flex gap-3 text-xs font-medium">
+                    {settings.showAccuracyScore && lastLineAccuracy !== null && (
+                      <span className="text-success">{lastLineAccuracy}%</span>
+                    )}
+                    {lastPickupTime !== null && (
+                      <span className="text-ai">Pickup: {(lastPickupTime / 1000).toFixed(1)}s</span>
+                    )}
+                    {lastPacingDelta && (
+                      <span className={Math.abs(lastPacingDelta.delta) <= 10 ? 'text-success' : Math.abs(lastPacingDelta.delta) <= 25 ? 'text-warning' : 'text-error'}>
+                        {lastPacingDelta.delta > 0 ? '+' : ''}{lastPacingDelta.delta.toFixed(0)}% pace
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           )
@@ -2613,13 +2949,31 @@ export function PracticeScreen() {
         <AnimatePresence>
           {status === 'wrong' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <Card padding="p-4" className="bg-red-500/10 ring-1 ring-red-500/20">
+              <Card padding="p-4" className="bg-error-muted ring-1 ring-error-border">
                 <div className="text-xs text-text-muted mb-1">You said:</div>
                 <div className="text-sm text-text italic mb-2">"{transcript || '(nothing)'}"</div>
-                {wrongWords.length > 0 && <div className="text-xs text-orange-400 mb-1">Wrong: {wrongWords.join(', ')}</div>}
-                {missingWords.length > 0 && <div className="text-xs text-red-400 mb-2">Missing: {missingWords.join(', ')}</div>}
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs mb-1">
+                  {settings.showAccuracyScore && lastLineAccuracy !== null && (
+                    <span className="text-warning">Accuracy: {lastLineAccuracy}%</span>
+                  )}
+                  {lastPickupTime !== null && (
+                    <span className="text-ai">Pickup: {(lastPickupTime / 1000).toFixed(1)}s</span>
+                  )}
+                  {lastPacingDelta && (
+                    <span className={Math.abs(lastPacingDelta.delta) <= 10 ? 'text-success' : Math.abs(lastPacingDelta.delta) <= 25 ? 'text-warning' : 'text-error'}>
+                      Pace: {lastPacingDelta.delta > 0 ? '+' : ''}{lastPacingDelta.delta.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+                {wrongWords.length > 0 && <div className="text-xs text-warning mb-1">Wrong: {wrongWords.join(', ')}</div>}
+                {missingWords.length > 0 && <div className="text-xs text-error mb-2">Missing: {missingWords.join(', ')}</div>}
                 <div className="flex gap-2">
                   <Button size="sm" onClick={retry} className="flex-1">Try Again</Button>
+                  {hasRecording && (
+                    <Button size="sm" variant="secondary" onClick={playLastRecording} className="flex-shrink-0">
+                      {isPlayingRecording ? 'Stop' : 'Hear Myself'}
+                    </Button>
+                  )}
                   <Button size="sm" variant="secondary" onClick={() => { setStatus('idle'); busyRef.current = false; next() }} className="flex-1">Skip</Button>
                 </div>
               </Card>
@@ -2631,12 +2985,12 @@ export function PracticeScreen() {
         <AnimatePresence>
           {status === 'listening' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20">
+              <div className="px-4 py-3 rounded-lg bg-error-muted border border-error-border">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  <span className="flex-1 text-sm text-red-400 truncate">{transcript || 'Listening...'}</span>
+                  <span className="w-2 h-2 rounded-full bg-error animate-pulse" />
+                  <span className="flex-1 text-sm text-error truncate">{transcript || 'Listening...'}</span>
                   <div className="w-12 h-1.5 bg-black/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-red-500 transition-all" style={{ width: `${audioLevel}%` }} />
+                    <div className="h-full bg-error transition-all" style={{ width: `${audioLevel}%` }} />
                   </div>
                 </div>
               </div>
@@ -2669,7 +3023,7 @@ export function PracticeScreen() {
                       <div 
                         key={i} 
                         className={`flex-1 h-2 rounded-full ${
-                          i < lastCheckpoint ? 'bg-green-500' : 'bg-white/10'
+                          i < lastCheckpoint ? 'bg-success' : 'bg-white/10'
                         }`} 
                       />
                     ))}
@@ -2816,7 +3170,7 @@ export function PracticeScreen() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="px-3 py-1.5 rounded-full bg-red-500/90 backdrop-blur text-white text-xs font-medium shadow-lg"
+              className="px-3 py-1.5 rounded-full bg-error/90 backdrop-blur text-white text-xs font-medium shadow-lg"
             >
               {errorPopup}
             </motion.div>
@@ -2834,7 +3188,7 @@ export function PracticeScreen() {
                 <div 
                   key={i} 
                   className={`w-4 h-1 rounded-full transition-colors ${
-                    i < buildProgress ? 'bg-green-500' : 
+                    i < buildProgress ? 'bg-success' : 
                     i === currentSegmentIndex ? 'bg-accent' : 
                     'bg-white/20'
                   }`} 
@@ -2842,7 +3196,7 @@ export function PracticeScreen() {
               ))}
             </div>
             {checkpointCount > 0 && (
-              <span className="text-[10px] text-green-400 flex items-center gap-0.5">
+              <span className="text-[10px] text-success flex items-center gap-0.5">
                 <IconCheck size={8} />{checkpointCount}
               </span>
             )}
@@ -2851,9 +3205,12 @@ export function PracticeScreen() {
         
         {/* Play button with listening indicator */}
         <div className="relative">
-          {/* Subtle glow when listening */}
+          {/* Subtle glow when listening or waiting for manual start */}
           {status === 'listening' && (
-            <div className="absolute -inset-1 rounded-full bg-red-500/20 blur-sm animate-pulse" />
+            <div className="absolute -inset-1 rounded-full bg-error/20 blur-sm animate-pulse" />
+          )}
+          {pendingListenRef.current && status === 'idle' && (
+            <div className="absolute -inset-1 rounded-full bg-accent/20 blur-sm animate-pulse" />
           )}
           <button 
             onClick={handlePlayPause} 
@@ -2877,6 +3234,8 @@ export function PracticeScreen() {
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (isPlaying || status === 'ai' || status === 'narrator' || status === 'segment') ? (
               <IconPause size={20} />
+            ) : pendingListenRef.current ? (
+              <IconMic size={20} />
             ) : (
               <IconPlay size={20} className="ml-0.5" />
             )}

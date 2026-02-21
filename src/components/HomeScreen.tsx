@@ -538,21 +538,21 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                   exit={{ opacity: 0, scale: 0.9 }}
                   className="fixed z-[102] inset-x-4 top-1/2 -translate-y-1/2 max-w-sm mx-auto"
                 >
-                  <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="bg-bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden">
                     <div className="p-6 text-center">
                       <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
                         <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
                         </svg>
                       </div>
-                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                      <h3 className="text-xl font-semibold text-text mb-2">
                         {TUTORIAL_STEPS[tutorialStep].title}
                       </h3>
-                      <p className="text-sm text-gray-600 leading-relaxed">
+                      <p className="text-sm text-text-muted leading-relaxed">
                         {TUTORIAL_STEPS[tutorialStep].description}
                       </p>
                     </div>
-                    <div className="px-6 py-4 bg-gray-50 flex justify-center">
+                    <div className="px-6 py-4 bg-bg-subtle flex justify-center">
                       <button
                         onClick={handleNextStep}
                         className="px-8 py-2.5 bg-accent text-white rounded-xl text-sm font-medium hover:bg-accent/90"
@@ -588,8 +588,8 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                     width: targetRect.width + 12,
                     height: targetRect.height + 12,
                     borderRadius: 16,
-                    border: '2px solid rgba(225, 29, 72, 0.8)',
-                    boxShadow: '0 0 0 4px rgba(225, 29, 72, 0.3)',
+                    border: '2px solid var(--accent-border)',
+                    boxShadow: '0 0 0 4px var(--accent-muted)',
                   }}
                 />
 
@@ -610,28 +610,28 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                   {/* Arrow pointing up (for bottom position) */}
                   {TUTORIAL_STEPS[tutorialStep].position === 'bottom' && (
                     <div className="flex justify-center mb-[-6px]">
-                      <div className="w-3 h-3 bg-white rotate-45 shadow-lg" />
+                      <div className="w-3 h-3 bg-bg-surface rotate-45 shadow-lg" />
                     </div>
                   )}
-                  
+
                   {/* Tooltip content */}
-                  <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="bg-bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden">
                     <div className="p-4">
-                      <h3 className="text-base font-semibold text-gray-900 mb-1">
+                      <h3 className="text-base font-semibold text-text mb-1">
                         {TUTORIAL_STEPS[tutorialStep].title}
                       </h3>
-                      <p className="text-sm text-gray-600 leading-relaxed">
+                      <p className="text-sm text-text-muted leading-relaxed">
                         {TUTORIAL_STEPS[tutorialStep].description}
                       </p>
                     </div>
-                    
+
                     {/* Footer */}
-                    <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+                    <div className="px-4 py-3 bg-bg-subtle flex items-center justify-between">
                       <div className="flex gap-1">
                         {TUTORIAL_STEPS.map((_, i) => (
-                          <div 
+                          <div
                             key={i}
-                            className={`w-1.5 h-1.5 rounded-full ${i === tutorialStep ? 'bg-accent' : 'bg-gray-300'}`}
+                            className={`w-1.5 h-1.5 rounded-full ${i === tutorialStep ? 'bg-accent' : 'bg-text-subtle'}`}
                           />
                         ))}
                       </div>
@@ -639,7 +639,7 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                         {tutorialStep > 0 && (
                           <button
                             onClick={() => setTutorialStep(tutorialStep - 1)}
-                            className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900"
+                            className="px-3 py-1.5 text-sm text-text-muted hover:text-text"
                           >
                             Back
                           </button>
@@ -653,11 +653,11 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Arrow pointing down (for top position) */}
                   {TUTORIAL_STEPS[tutorialStep].position === 'top' && (
                     <div className="flex justify-center">
-                      <div className="w-3 h-3 bg-white rotate-45 -mt-1.5 shadow-lg" />
+                      <div className="w-3 h-3 bg-bg-surface rotate-45 -mt-1.5 shadow-lg" />
                     </div>
                   )}
                 </motion.div>

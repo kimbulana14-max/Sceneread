@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",
@@ -31,6 +33,7 @@
     "@types/react-dom": "^18.3.7",
     "postcss-import": "^16.1.1",
     "sharp": "^0.34.5",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.0.18"
   }
 }
