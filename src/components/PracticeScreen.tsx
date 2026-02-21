@@ -755,20 +755,39 @@ export function PracticeScreen() {
   
   const getLineSegments = (line: typeof currentLine): string[] => {
     if (!line) return []
+    let segments: string[]
     // Use AI-generated segments if available (preferred)
     if (line.practice_segments && Array.isArray(line.practice_segments) && line.practice_segments.length > 0) {
-      // Strip parentheticals from each segment
-      return line.practice_segments.map(seg => stripParentheticals(seg))
+      segments = line.practice_segments.map(seg => stripParentheticals(seg))
+    } else {
+      // Fallback: split into ~4 word chunks if no AI segments (after stripping parentheticals)
+      const cleanContent = stripParentheticals(line.content)
+      const words = cleanContent.split(/\s+/)
+      segments = []
+      const chunkSize = 4
+      for (let i = 0; i < words.length; i += chunkSize) {
+        segments.push(words.slice(i, i + chunkSize).join(' '))
+      }
     }
-    // Fallback: split into ~4 word chunks if no AI segments (after stripping parentheticals)
-    const cleanContent = stripParentheticals(line.content)
-    const words = cleanContent.split(/\s+/)
-    const segs: string[] = []
-    const chunkSize = 4
-    for (let i = 0; i < words.length; i += chunkSize) {
-      segs.push(words.slice(i, i + chunkSize).join(' '))
+    // Post-process: merge segments with fewer than 2 words into adjacent segments
+    // This prevents useless 1-word segments like "Goodbye." or "Thanks."
+    if (segments.length > 1) {
+      const merged: string[] = []
+      for (let i = 0; i < segments.length; i++) {
+        const wordCount = segments[i].trim().split(/\s+/).filter(w => w).length
+        if (wordCount < 2 && merged.length > 0) {
+          // Merge short segment with previous
+          merged[merged.length - 1] += ' ' + segments[i]
+        } else if (wordCount < 2 && i < segments.length - 1) {
+          // First segment is too short — prepend to next
+          segments[i + 1] = segments[i] + ' ' + segments[i + 1]
+        } else {
+          merged.push(segments[i])
+        }
+      }
+      return merged.filter(s => s.trim().length > 0)
     }
-    return segs
+    return segments.filter(s => s.trim().length > 0)
   }
 
   // Play segment audio via live TTS (Google Chirp 3 HD - direct API call)
@@ -2312,10 +2331,9 @@ export function PracticeScreen() {
               </div>
 
               {/* Content */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
                 {/* Mode Selection - 3-way toggle */}
                 <div>
-                  <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Mode</label>
                   <div className="flex bg-bg-surface rounded-xl p-1">
                     {([
                       { key: 'listen', label: 'Listen', desc: 'Hear the scene' },
@@ -2341,18 +2359,20 @@ export function PracticeScreen() {
                     {learningMode === 'practice' && 'Speak your lines and get accuracy feedback'}
                   </p>
                 </div>
-                
-                {/* Playback Speed */}
-                <div>
-                  <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Speed</label>
-                  <div className="flex gap-2">
-                    {[0.5, 0.75, 1, 1.25, 1.5].map(speed => (
-                      <button 
-                          key={speed} 
-                          onClick={() => updateSettings({ playbackSpeed: speed })} 
+
+                {/* ── ESSENTIALS ── */}
+                <SettingsSection title="Essentials" defaultOpen>
+                  {/* Speed */}
+                  <div>
+                    <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Speed</label>
+                    <div className="flex gap-2">
+                      {[0.5, 0.75, 1, 1.25, 1.5].map(speed => (
+                        <button
+                          key={speed}
+                          onClick={() => updateSettings({ playbackSpeed: speed })}
                           className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                            settings.playbackSpeed === speed 
-                              ? 'bg-accent text-white' 
+                            settings.playbackSpeed === speed
+                              ? 'bg-accent text-white'
                               : 'bg-bg-surface text-text-muted hover:text-text'
                           }`}
                         >
@@ -2362,339 +2382,326 @@ export function PracticeScreen() {
                     </div>
                   </div>
 
-                {/* Text Visibility - show for modes where you speak */}
-                {['practice', 'repeat'].includes(learningMode) && (
-                  <div>
-                    <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Text Visibility</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {([
-                        { key: 'full', label: 'Full' },
-                        { key: 'first-letter', label: '1st' },
-                        { key: 'blurred', label: 'Blur' },
-                        { key: 'hidden', label: 'Hide' },
-                      ] as { key: 'full' | 'first-letter' | 'blurred' | 'hidden'; label: string }[]).map(opt => (
-                        <button 
-                          key={opt.key} 
-                          onClick={() => updateSettings({ textVisibility: opt.key })} 
-                          className={`py-2.5 rounded-xl text-sm font-medium transition-all ${
-                            settings.textVisibility === opt.key 
-                              ? 'bg-accent text-white' 
-                              : 'bg-bg-surface text-text-muted hover:text-text'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Repeat Full Line X Times - only for repeat mode */}
-                {learningMode === 'repeat' && (
-                  <div>
-                    <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Full Line Repetitions</label>
-                    <div className="flex gap-2">
-                      {[1, 2, 3, 4].map(n => (
-                        <button 
-                          key={n}
-                          onClick={() => updateSettings({ repeatFullLineTimes: n })}
-                          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                            (settings.repeatFullLineTimes || 1) === n 
-                              ? 'bg-accent text-white' 
-                              : 'bg-bg-surface text-text-muted hover:text-text'
-                          }`}
-                        >
-                          {n}x
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-xs text-text-subtle mt-2">Repeat full line this many times before moving on</p>
-                  </div>
-                )}
-
-                {/* Stage Directions */}
-                <div>
-                  <SettingsToggle 
-                    label="Include stage directions" 
-                    value={includeDirections} 
-                    onChange={setIncludeDirections} 
-                  />
-                  {includeDirections && (
-                    <div className="flex gap-2 bg-bg-surface rounded-xl p-1.5 mt-3">
-                      {(['spoken', 'shown', 'muted'] as const).map(m => (
-                        <button 
-                          key={m} 
-                          onClick={() => setDirectionsMode(m)} 
-                          className={`flex-1 py-2.5 rounded-lg text-sm font-medium ${directionsMode === m ? 'bg-overlay-10 text-text' : 'text-text-muted'}`}
-                        >
-                          {m.charAt(0).toUpperCase() + m.slice(1)}
-                        </button>
-                      ))}
+                  {/* Text Visibility */}
+                  {['practice', 'repeat'].includes(learningMode) && (
+                    <div>
+                      <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Text Visibility</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {([
+                          { key: 'full', label: 'Full' },
+                          { key: 'first-letter', label: '1st' },
+                          { key: 'blurred', label: 'Blur' },
+                          { key: 'hidden', label: 'Hide' },
+                        ] as { key: 'full' | 'first-letter' | 'blurred' | 'hidden'; label: string }[]).map(opt => (
+                          <button
+                            key={opt.key}
+                            onClick={() => updateSettings({ textVisibility: opt.key })}
+                            className={`py-2.5 rounded-xl text-sm font-medium transition-all ${
+                              settings.textVisibility === opt.key
+                                ? 'bg-accent text-white'
+                                : 'bg-bg-surface text-text-muted hover:text-text'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
-                </div>
 
-                {/* Divider */}
-                <div className="border-t border-border pt-4">
-                  <p className="text-xs text-text-muted uppercase tracking-wide mb-4">Cues & Feedback</p>
-                </div>
-
-                {/* Audio Cues */}
-                <div className="space-y-1">
-                  <SettingsToggle 
-                    label="Play 'your turn' cue" 
-                    value={settings.playYourTurnCue} 
-                    onChange={v => updateSettings({ playYourTurnCue: v })} 
-                  />
-                  <p className="text-xs text-text-muted ml-0 mb-3">Subtle sound when it's your line</p>
-                  
-                  <SettingsToggle 
-                    label="Sound on correct" 
-                    value={settings.playSoundOnCorrect} 
-                    onChange={v => updateSettings({ playSoundOnCorrect: v })} 
-                  />
-                  <SettingsToggle
-                    label="Sound on wrong"
-                    value={settings.playSoundOnWrong}
-                    onChange={v => updateSettings({ playSoundOnWrong: v })}
-                  />
-                  <SettingsToggle
-                    label="Speak error feedback"
-                    value={settings.speakErrorFeedback}
-                    onChange={v => updateSettings({ speakErrorFeedback: v })}
-                  />
-                  <p className="text-xs text-text-muted ml-0 mb-3">AI speaks what you got wrong</p>
-                  <SettingsToggle
-                    label="Speak character names"
-                    value={settings.speakCharacterNames}
-                    onChange={v => updateSettings({ speakCharacterNames: v })}
-                  />
-                  <p className="text-xs text-text-muted ml-0 mb-3">Announce who's speaking before each line</p>
-                  <SettingsToggle 
-                    label="Speak parentheticals" 
-                    value={settings.speakParentheticals} 
-                    onChange={v => updateSettings({ speakParentheticals: v })} 
-                  />
-                  <p className="text-xs text-text-muted ml-0 mb-3">Narrate direction cues like "(angrily)" or "(beat)"</p>
-                  <SettingsToggle 
-                    label="Use pre-generated audio" 
-                    value={settings.usePreGeneratedAudio} 
-                    onChange={v => updateSettings({ usePreGeneratedAudio: v })} 
-                  />
-                  <p className="text-xs text-text-muted ml-0 mb-3">Use high-quality pre-generated voices when available</p>
-                </div>
-
-                {/* Divider */}
-                <div className="border-t border-border pt-4">
-                  <p className="text-xs text-text-muted uppercase tracking-wide mb-4">Behavior</p>
-                </div>
-
-                {/* Behavior Toggles */}
-                <div className="space-y-1">
+                  {/* Key behavior toggles */}
                   {learningMode !== 'listen' && (
-                    <>
-                      <SettingsToggle 
-                        label="Auto-advance on correct" 
-                        value={settings.autoAdvanceOnCorrect} 
-                        onChange={v => updateSettings({ autoAdvanceOnCorrect: v })} 
+                    <div className="space-y-1">
+                      <SettingsToggle
+                        label="Auto-advance on correct"
+                        value={settings.autoAdvanceOnCorrect}
+                        onChange={v => updateSettings({ autoAdvanceOnCorrect: v })}
                       />
-                      <SettingsToggle 
-                        label="Auto-repeat on wrong" 
-                        value={settings.autoRepeatOnWrong} 
-                        onChange={v => updateSettings({ autoRepeatOnWrong: v })} 
+                      <SettingsToggle
+                        label="Auto-start recording"
+                        value={settings.autoStartRecording}
+                        onChange={v => updateSettings({ autoStartRecording: v })}
                       />
-                      <p className="text-xs text-text-muted ml-0 mb-3">Automatically replay the line if you get it wrong</p>
-                      <SettingsToggle 
-                        label="Repeat full line on fail" 
-                        value={settings.repeatFullLineOnFail} 
-                        onChange={v => updateSettings({ repeatFullLineOnFail: v })} 
-                      />
-                      <p className="text-xs text-text-muted ml-0 mb-3">Restart the entire line from beginning when you fail</p>
-                      <SettingsToggle 
-                        label="Restart scene on fail" 
-                        value={settings.restartOnFail} 
-                        onChange={v => updateSettings({ restartOnFail: v })} 
-                      />
-                      <p className="text-xs text-text-muted ml-0 mb-3">{settings.repeatFullLineOnFail ? 'Go back to first line after failing same line twice' : 'Go back to first line when you fail'}</p>
-                    </>
+                    </div>
                   )}
+
                   <SettingsToggle
                     label="Loop scene"
                     value={loop}
                     onChange={setLoop}
                   />
+
+                  {/* Full Line Repetitions (repeat mode) */}
+                  {learningMode === 'repeat' && (
+                    <div>
+                      <label className="text-xs text-text-muted uppercase tracking-wide block mb-3">Full Line Repetitions</label>
+                      <div className="flex gap-2">
+                        {[1, 2, 3, 4].map(n => (
+                          <button
+                            key={n}
+                            onClick={() => updateSettings({ repeatFullLineTimes: n })}
+                            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                              (settings.repeatFullLineTimes || 1) === n
+                                ? 'bg-accent text-white'
+                                : 'bg-bg-surface text-text-muted hover:text-text'
+                            }`}
+                          >
+                            {n}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </SettingsSection>
+
+                {/* ── AUDIO & VOICES ── */}
+                <SettingsSection title="Audio & Voices">
+                  <div className="space-y-1">
+                    <SettingsToggle
+                      label="Play 'your turn' cue"
+                      value={settings.playYourTurnCue}
+                      onChange={v => updateSettings({ playYourTurnCue: v })}
+                    />
+                    <p className="text-xs text-text-muted ml-0 mb-2">Subtle sound when it's your line</p>
+
+                    <SettingsToggle
+                      label="Sound on correct"
+                      value={settings.playSoundOnCorrect}
+                      onChange={v => updateSettings({ playSoundOnCorrect: v })}
+                    />
+                    <SettingsToggle
+                      label="Sound on wrong"
+                      value={settings.playSoundOnWrong}
+                      onChange={v => updateSettings({ playSoundOnWrong: v })}
+                    />
+                    <SettingsToggle
+                      label="Speak error feedback"
+                      value={settings.speakErrorFeedback}
+                      onChange={v => updateSettings({ speakErrorFeedback: v })}
+                    />
+                    <p className="text-xs text-text-muted ml-0 mb-2">AI speaks what you got wrong</p>
+                    <SettingsToggle
+                      label="Speak character names"
+                      value={settings.speakCharacterNames}
+                      onChange={v => updateSettings({ speakCharacterNames: v })}
+                    />
+                    <SettingsToggle
+                      label="Speak parentheticals"
+                      value={settings.speakParentheticals}
+                      onChange={v => updateSettings({ speakParentheticals: v })}
+                    />
+                    <p className="text-xs text-text-muted ml-0 mb-2">Narrate cues like "(angrily)"</p>
+                    <SettingsToggle
+                      label="Use pre-generated audio"
+                      value={settings.usePreGeneratedAudio}
+                      onChange={v => updateSettings({ usePreGeneratedAudio: v })}
+                    />
+                    <SettingsToggle
+                      label="Play my lines (AI speaks for me)"
+                      value={settings.playMyLine}
+                      onChange={v => updateSettings({ playMyLine: v })}
+                    />
+                    <p className="text-xs text-text-muted ml-0 mb-2">AI will speak your lines too</p>
+                    <SettingsToggle
+                      label="Partner speed variation"
+                      value={settings.partnerSpeedVariation}
+                      onChange={v => updateSettings({ partnerSpeedVariation: v })}
+                    />
+                  </div>
+
+                  {/* Stage Directions */}
+                  <div className="pt-2">
+                    <SettingsToggle
+                      label="Include stage directions"
+                      value={includeDirections}
+                      onChange={setIncludeDirections}
+                    />
+                    {includeDirections && (
+                      <div className="flex gap-2 bg-bg-surface rounded-xl p-1.5 mt-3">
+                        {(['spoken', 'shown', 'muted'] as const).map(m => (
+                          <button
+                            key={m}
+                            onClick={() => setDirectionsMode(m)}
+                            className={`flex-1 py-2.5 rounded-lg text-sm font-medium ${directionsMode === m ? 'bg-overlay-10 text-text' : 'text-text-muted'}`}
+                          >
+                            {m.charAt(0).toUpperCase() + m.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </SettingsSection>
+
+                {/* ── TIMING & FLOW ── */}
+                <SettingsSection title="Timing & Flow">
+                  {/* Wait for me delay */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-text">Wait before my turn</label>
+                      <span className="text-sm font-medium text-accent">{(settings.waitForMeDelay / 1000).toFixed(1)}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={3000}
+                      step={250}
+                      value={settings.waitForMeDelay}
+                      onChange={(e) => updateSettings({ waitForMeDelay: Number(e.target.value) })}
+                      className="w-full accent-accent"
+                    />
+                    <p className="text-xs text-text-muted mt-1">Pause after AI speaks before your turn</p>
+                  </div>
+
+                  {/* Silence duration */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-text">Silence between lines</label>
+                      <span className="text-sm font-medium text-accent">{(settings.silenceDuration / 1000).toFixed(1)}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={500}
+                      max={3000}
+                      step={250}
+                      value={settings.silenceDuration}
+                      onChange={(e) => updateSettings({ silenceDuration: Number(e.target.value) })}
+                      className="w-full accent-accent"
+                    />
+                  </div>
+
+                  {learningMode !== 'listen' && (
+                    <div className="space-y-1">
+                      <SettingsToggle
+                        label="Auto-repeat on wrong"
+                        value={settings.autoRepeatOnWrong}
+                        onChange={v => updateSettings({ autoRepeatOnWrong: v })}
+                      />
+                      <p className="text-xs text-text-muted ml-0 mb-2">Replay the line if you get it wrong</p>
+                      <SettingsToggle
+                        label="Repeat full line on fail"
+                        value={settings.repeatFullLineOnFail}
+                        onChange={v => updateSettings({ repeatFullLineOnFail: v })}
+                      />
+                      <p className="text-xs text-text-muted ml-0 mb-2">Restart entire line from beginning on fail</p>
+                      <SettingsToggle
+                        label="Restart scene on fail"
+                        value={settings.restartOnFail}
+                        onChange={v => updateSettings({ restartOnFail: v })}
+                      />
+                      <p className="text-xs text-text-muted ml-0 mb-2">{settings.repeatFullLineOnFail ? 'Back to first line after failing twice' : 'Back to first line when you fail'}</p>
+                    </div>
+                  )}
+
                   <SettingsToggle
                     label="Random line order"
                     value={settings.randomOrder}
                     onChange={v => { updateSettings({ randomOrder: v }); if (v) buildRandomQueue() }}
                   />
-                  <p className="text-xs text-text-muted ml-0 mb-3">Shuffle your lines to test true memorization</p>
-                  <SettingsToggle
-                    label="Auto-start recording"
-                    value={settings.autoStartRecording} 
-                    onChange={v => updateSettings({ autoStartRecording: v })} 
-                  />
-                  <SettingsToggle
-                    label="Show live transcript"
-                    value={settings.showLiveTranscript}
-                    onChange={v => updateSettings({ showLiveTranscript: v })}
-                  />
-                  <SettingsToggle
-                    label="Show accuracy score"
-                    value={settings.showAccuracyScore}
-                    onChange={v => updateSettings({ showAccuracyScore: v })}
-                  />
-                </div>
+                </SettingsSection>
 
-                {/* Divider */}
-                <div className="border-t border-border pt-4">
-                  <p className="text-xs text-text-muted uppercase tracking-wide mb-4">Timing</p>
-                </div>
-
-                {/* Wait for me delay */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="text-sm font-medium text-text">Wait before my turn</label>
-                    <span className="text-sm font-medium text-accent">{(settings.waitForMeDelay / 1000).toFixed(1)}s</span>
+                {/* ── DISPLAY ── */}
+                <SettingsSection title="Display">
+                  <div className="space-y-1">
+                    <SettingsToggle
+                      label="Show live transcript"
+                      value={settings.showLiveTranscript}
+                      onChange={v => updateSettings({ showLiveTranscript: v })}
+                    />
+                    <SettingsToggle
+                      label="Show accuracy score"
+                      value={settings.showAccuracyScore}
+                      onChange={v => updateSettings({ showAccuracyScore: v })}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={3000}
-                    step={250}
-                    value={settings.waitForMeDelay}
-                    onChange={(e) => updateSettings({ waitForMeDelay: Number(e.target.value) })}
-                    className="w-full accent-accent"
-                  />
-                  <p className="text-xs text-text-muted mt-1">Pause after AI speaks before expecting your response</p>
-                </div>
 
-                {/* Silence duration */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="text-sm font-medium text-text">Silence between lines</label>
-                    <span className="text-sm font-medium text-accent">{(settings.silenceDuration / 1000).toFixed(1)}s</span>
+                  {/* Cue-only words */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-text">Cue-only words</label>
+                      <span className="text-sm font-medium text-accent">{settings.cueOnlyWords > 0 ? `${settings.cueOnlyWords} words` : 'Off'}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      step={1}
+                      value={settings.cueOnlyWords}
+                      onChange={(e) => updateSettings({ cueOnlyWords: Number(e.target.value) })}
+                      className="w-full accent-accent"
+                    />
+                    <p className="text-xs text-text-muted mt-1">Show only the first N words as a cue</p>
                   </div>
-                  <input
-                    type="range"
-                    min={500}
-                    max={3000}
-                    step={250}
-                    value={settings.silenceDuration}
-                    onChange={(e) => updateSettings({ silenceDuration: Number(e.target.value) })}
-                    className="w-full accent-accent"
-                  />
-                </div>
 
-                {/* Divider */}
-                <div className="border-t border-border pt-4">
-                  <p className="text-xs text-text-muted uppercase tracking-wide mb-4">Advanced</p>
-                </div>
+                  {/* Cold read timer */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-text">Cold read timer</label>
+                      <span className="text-sm font-medium text-accent">{settings.coldReadTime > 0 ? `${settings.coldReadTime}s` : 'Off'}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      step={1}
+                      value={settings.coldReadTime}
+                      onChange={(e) => updateSettings({ coldReadTime: Number(e.target.value) })}
+                      className="w-full accent-accent"
+                    />
+                    <p className="text-xs text-text-muted mt-1">Show text briefly then apply visibility</p>
+                  </div>
 
-                {/* Play my line option */}
-                <div className="space-y-1">
-                  <SettingsToggle 
-                    label="Play my lines (AI speaks for me)" 
-                    value={settings.playMyLine} 
-                    onChange={v => updateSettings({ playMyLine: v })} 
-                  />
-                  <p className="text-xs text-text-muted ml-0 mb-3">AI will speak your lines too - useful for listening practice</p>
-                </div>
+                  {/* Before/After visibility */}
+                  <div className="space-y-3">
+                    <SettingsToggle
+                      label="Before/after visibility"
+                      value={settings.useBeforeAfterVisibility}
+                      onChange={v => updateSettings({ useBeforeAfterVisibility: v })}
+                    />
 
-                <SettingsToggle
-                  label="Partner speed variation"
-                  value={settings.partnerSpeedVariation}
-                  onChange={v => updateSettings({ partnerSpeedVariation: v })}
-                />
-                <p className="text-xs text-text-muted ml-0 mb-3">Randomly vary AI partner's speed to simulate unpredictability</p>
-
-                {/* Before/After visibility */}
-                <div className="space-y-3">
-                  <SettingsToggle 
-                    label="Different visibility before/after speaking" 
-                    value={settings.useBeforeAfterVisibility} 
-                    onChange={v => updateSettings({ useBeforeAfterVisibility: v })} 
-                  />
-                  
-                  {settings.useBeforeAfterVisibility && (
-                    <>
-                      <div>
-                        <label className="text-xs text-text-muted block mb-2">Before speaking my line</label>
-                        <div className="grid grid-cols-4 gap-1 bg-bg-surface rounded-lg p-1">
-                          {([
-                            { key: 'full', label: 'Full' },
-                            { key: 'first-letter', label: '1st Letter' },
-                            { key: 'blurred', label: 'Blur' },
-                            { key: 'hidden', label: 'Hide' }
-                          ] as const).map(({ key, label }) => (
-                            <button 
-                              key={key} 
-                              onClick={() => updateSettings({ visibilityBeforeSpeaking: key })} 
-                              className={`py-2 rounded text-[10px] font-medium ${settings.visibilityBeforeSpeaking === key ? 'bg-accent text-white' : 'text-text-muted'}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
+                    {settings.useBeforeAfterVisibility && (
+                      <>
+                        <div>
+                          <label className="text-xs text-text-muted block mb-2">Before speaking</label>
+                          <div className="grid grid-cols-4 gap-1 bg-bg-surface rounded-lg p-1">
+                            {([
+                              { key: 'full', label: 'Full' },
+                              { key: 'first-letter', label: '1st' },
+                              { key: 'blurred', label: 'Blur' },
+                              { key: 'hidden', label: 'Hide' }
+                            ] as const).map(({ key, label }) => (
+                              <button
+                                key={key}
+                                onClick={() => updateSettings({ visibilityBeforeSpeaking: key })}
+                                className={`py-2 rounded text-[10px] font-medium ${settings.visibilityBeforeSpeaking === key ? 'bg-accent text-white' : 'text-text-muted'}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-text-muted block mb-2">After speaking my line</label>
-                        <div className="grid grid-cols-4 gap-1 bg-bg-surface rounded-lg p-1">
-                          {([
-                            { key: 'full', label: 'Full' },
-                            { key: 'first-letter', label: '1st Letter' },
-                            { key: 'blurred', label: 'Blur' },
-                            { key: 'hidden', label: 'Hide' }
-                          ] as const).map(({ key, label }) => (
-                            <button 
-                              key={key} 
-                              onClick={() => updateSettings({ visibilityAfterSpeaking: key })} 
-                              className={`py-2 rounded text-[10px] font-medium ${settings.visibilityAfterSpeaking === key ? 'bg-accent text-white' : 'text-text-muted'}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
+                        <div>
+                          <label className="text-xs text-text-muted block mb-2">After speaking</label>
+                          <div className="grid grid-cols-4 gap-1 bg-bg-surface rounded-lg p-1">
+                            {([
+                              { key: 'full', label: 'Full' },
+                              { key: 'first-letter', label: '1st' },
+                              { key: 'blurred', label: 'Blur' },
+                              { key: 'hidden', label: 'Hide' }
+                            ] as const).map(({ key, label }) => (
+                              <button
+                                key={key}
+                                onClick={() => updateSettings({ visibilityAfterSpeaking: key })}
+                                className={`py-2 rounded text-[10px] font-medium ${settings.visibilityAfterSpeaking === key ? 'bg-accent text-white' : 'text-text-muted'}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Cold read timer */}
-                <div className="mt-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="text-sm font-medium text-text">Cold read timer</label>
-                    <span className="text-sm font-medium text-accent">{settings.coldReadTime > 0 ? `${settings.coldReadTime}s` : 'Off'}</span>
+                      </>
+                    )}
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={settings.coldReadTime}
-                    onChange={(e) => updateSettings({ coldReadTime: Number(e.target.value) })}
-                    className="w-full accent-accent"
-                  />
-                  <p className="text-xs text-text-muted mt-1">Show text briefly then apply visibility setting</p>
-                </div>
-
-                {/* Cue-only words */}
-                <div className="mt-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="text-sm font-medium text-text">Cue-only words</label>
-                    <span className="text-sm font-medium text-accent">{settings.cueOnlyWords > 0 ? `${settings.cueOnlyWords} words` : 'Off'}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={settings.cueOnlyWords}
-                    onChange={(e) => updateSettings({ cueOnlyWords: Number(e.target.value) })}
-                    className="w-full accent-accent"
-                  />
-                  <p className="text-xs text-text-muted mt-1">Show only the first N words of your lines as a cue</p>
-                </div>
+                </SettingsSection>
               </div>
 
               {/* Sticky footer with Done button */}
@@ -3324,6 +3331,31 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${value ? 'left-4' : 'left-0.5'}`} />
       </button>
     </label>
+  )
+}
+
+function SettingsSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-bg-elevated hover:bg-bg-surface-hover transition-colors"
+      >
+        <span className="text-sm font-medium text-text">{title}</span>
+        <svg
+          className={`w-4 h-4 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 py-4 space-y-4 bg-bg">
+          {children}
+        </div>
+      )}
+    </div>
   )
 }
 
