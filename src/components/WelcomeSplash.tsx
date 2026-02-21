@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useSettings } from '@/store'
 
 interface WelcomeSplashProps {
@@ -10,38 +10,45 @@ interface WelcomeSplashProps {
 }
 
 export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
-  const [phase, setPhase] = useState<'enter' | 'hold' | 'exit'>('enter')
+  const [phase, setPhase] = useState<'spotlight' | 'reveal' | 'greeting' | 'exit'>('spotlight')
   const colorTheme = useSettings((s) => s.settings.colorTheme)
   const isLight = colorTheme === 'light'
 
   const firstName = name?.split(' ')[0] || 'Actor'
-  
-  // Motivational phrases
+
   const phrases = [
     "Time to shine",
-    "Let's rehearse",
     "Break a leg",
-    "Lights, camera, action",
     "The stage is yours",
-    "Ready for your scene",
+    "Lights, camera, action",
+    "Your scene awaits",
+    "Take center stage",
   ]
-  
-  const [phrase] = useState(() => phrases[Math.floor(Math.random() * phrases.length)])
+
+  const phrase = useMemo(() => phrases[Math.floor(Math.random() * phrases.length)], [])
+
+  // Generate floating particles
+  const particles = useMemo(() =>
+    Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 3 + 1,
+      delay: Math.random() * 2,
+      duration: Math.random() * 3 + 2,
+    })), [])
 
   useEffect(() => {
-    // Enter animation complete -> hold
-    const holdTimer = setTimeout(() => setPhase('hold'), 600)
-    // Hold complete -> exit
-    const exitTimer = setTimeout(() => setPhase('exit'), 1400)
-    // Exit complete -> callback
-    const completeTimer = setTimeout(() => onComplete(), 2000)
-    
-    return () => {
-      clearTimeout(holdTimer)
-      clearTimeout(exitTimer)
-      clearTimeout(completeTimer)
-    }
+    const t1 = setTimeout(() => setPhase('reveal'), 400)
+    const t2 = setTimeout(() => setPhase('greeting'), 1000)
+    const t3 = setTimeout(() => setPhase('exit'), 2400)
+    const t4 = setTimeout(() => onComplete(), 3000)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
   }, [onComplete])
+
+  const accentColor = isLight ? '#B87333' : '#E11D48'
+  const accentGlow = isLight ? 'rgba(184,115,51,0.4)' : 'rgba(225,29,72,0.4)'
+  const aiColor = isLight ? '#7a9e93' : '#6366F1'
 
   return (
     <motion.div
@@ -50,89 +57,188 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
       transition={{ duration: 0.5 }}
       className="fixed inset-0 z-[100] bg-bg flex flex-col items-center justify-center overflow-hidden"
     >
-      {/* Background gradient pulse */}
+      {/* Animated background gradient — two crossing beams */}
       <motion.div
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: 2.5, opacity: 0.15 }}
-        transition={{ duration: 1.5, ease: 'easeOut' }}
-        className="absolute w-[400px] h-[400px] rounded-full bg-gradient-radial from-accent to-transparent"
-      />
-      
-      {/* Logo/Icon */}
-      <motion.div
-        initial={{ scale: 0, rotate: -180 }}
-        animate={{ scale: 1, rotate: 0 }}
-        transition={{ 
-          type: 'spring', 
-          damping: 15, 
-          stiffness: 200,
-          delay: 0.1 
+        initial={{ opacity: 0, rotate: -15, scale: 0.5 }}
+        animate={{
+          opacity: phase === 'spotlight' ? 0.3 : 0.12,
+          rotate: 0,
+          scale: 1.5,
         }}
-        className="relative mb-8"
-      >
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-bg-elevated to-bg flex items-center justify-center shadow-lg shadow-accent/30 border border-border">
-          <svg className="w-12 h-12" viewBox="0 0 512 512" fill="none">
-            <defs>
-              <linearGradient id="splashAccent" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={isLight ? "#C48B5C" : "#FB7185"}/>
-                <stop offset="50%" stopColor={isLight ? "#B87333" : "#E11D48"}/>
-                <stop offset="100%" stopColor={isLight ? "#9A5F28" : "#BE123C"}/>
-              </linearGradient>
-            </defs>
-            <path
-              d="M 320 130 C 380 130, 380 195, 320 195 L 192 195 C 132 195, 132 260, 192 260 L 320 260 C 380 260, 380 325, 320 325 L 192 325 C 132 325, 132 390, 192 390"
-              stroke="url(#splashAccent)"
-              strokeWidth="44"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-            <circle cx="192" cy="390" r="22" fill="url(#splashAccent)"/>
-          </svg>
-        </div>
-        
-        {/* Sparkle effects */}
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.3 }}
-          className="absolute -top-1 -right-1 w-3 h-3 bg-accent rounded-full"
-        />
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 0.6 }}
-          transition={{ delay: 0.5, duration: 0.3 }}
-          className="absolute -bottom-2 -left-2 w-2 h-2 bg-ai rounded-full"
-        />
-      </motion.div>
+        transition={{ duration: 1.8, ease: 'easeOut' }}
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `conic-gradient(from 180deg at 50% 40%, transparent 0deg, ${accentGlow} 40deg, transparent 80deg, transparent 180deg, ${isLight ? 'rgba(122,158,147,0.25)' : 'rgba(99,102,241,0.2)'} 220deg, transparent 260deg)`,
+        }}
+      />
 
-      {/* Greeting */}
+      {/* Radial spotlight from top */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.4 }}
-        className="text-center"
-      >
-        <h1 className="text-3xl font-display text-text mb-3">
+        initial={{ opacity: 0, y: '-30%' }}
+        animate={{ opacity: 0.5, y: '0%' }}
+        transition={{ duration: 1, ease: 'easeOut' }}
+        className="absolute top-0 left-1/2 -translate-x-1/2 w-[200%] h-[60%] pointer-events-none"
+        style={{
+          background: `radial-gradient(ellipse 40% 70% at 50% 0%, ${accentGlow} 0%, transparent 70%)`,
+        }}
+      />
+
+      {/* Floating dust particles */}
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          initial={{ opacity: 0, y: `${p.y}vh`, x: `${p.x - 50}vw` }}
+          animate={{
+            opacity: [0, 0.6, 0],
+            y: [`${p.y}vh`, `${p.y - 15}vh`],
+          }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            width: p.size,
+            height: p.size,
+            background: p.id % 3 === 0 ? accentColor : p.id % 3 === 1 ? aiColor : (isLight ? '#c5a55a' : '#FAFAFA'),
+          }}
+        />
+      ))}
+
+      {/* Horizontal accent lines — stage floor marks */}
+      <motion.div
+        initial={{ scaleX: 0, opacity: 0 }}
+        animate={{ scaleX: 1, opacity: 0.15 }}
+        transition={{ delay: 0.6, duration: 0.8, ease: 'easeOut' }}
+        className="absolute bottom-[35%] left-0 right-0 h-px origin-center"
+        style={{ background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)` }}
+      />
+      <motion.div
+        initial={{ scaleX: 0, opacity: 0 }}
+        animate={{ scaleX: 1, opacity: 0.08 }}
+        transition={{ delay: 0.8, duration: 0.8, ease: 'easeOut' }}
+        className="absolute bottom-[33%] left-[10%] right-[10%] h-px origin-center"
+        style={{ background: `linear-gradient(90deg, transparent, ${aiColor}, transparent)` }}
+      />
+
+      {/* Main content container */}
+      <div className="relative flex flex-col items-center z-10">
+        {/* Logo */}
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{
+            scale: phase === 'spotlight' ? 0.6 : 1,
+            opacity: 1,
+          }}
+          transition={{
+            type: 'spring',
+            damping: 20,
+            stiffness: 150,
+            delay: 0.15,
+          }}
+          className="relative mb-10"
+        >
+          {/* Glow ring behind logo */}
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: [1, 1.3, 1.1], opacity: [0, 0.6, 0.3] }}
+            transition={{ duration: 2, delay: 0.3, ease: 'easeOut' }}
+            className="absolute inset-[-20px] rounded-full pointer-events-none"
+            style={{
+              background: `radial-gradient(circle, ${accentGlow} 0%, transparent 70%)`,
+            }}
+          />
+
+          <div
+            className="w-24 h-24 rounded-3xl flex items-center justify-center relative"
+            style={{
+              background: isLight
+                ? 'linear-gradient(135deg, #f5f1eb 0%, #e8e2d9 100%)'
+                : 'linear-gradient(135deg, #141418 0%, #1E1E24 100%)',
+              boxShadow: `0 0 40px ${accentGlow}, 0 0 80px ${isLight ? 'rgba(184,115,51,0.15)' : 'rgba(225,29,72,0.15)'}`,
+              border: `1px solid ${isLight ? 'rgba(184,115,51,0.2)' : 'rgba(255,255,255,0.08)'}`,
+            }}
+          >
+            <svg className="w-14 h-14" viewBox="0 0 512 512" fill="none">
+              <defs>
+                <linearGradient id="splashAccentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor={accentColor} />
+                  <stop offset="100%" stopColor={aiColor} />
+                </linearGradient>
+              </defs>
+              <motion.path
+                d="M 320 130 C 380 130, 380 195, 320 195 L 192 195 C 132 195, 132 260, 192 260 L 320 260 C 380 260, 380 325, 320 325 L 192 325 C 132 325, 132 390, 192 390"
+                stroke="url(#splashAccentGrad)"
+                strokeWidth="44"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: 1.2, delay: 0.2, ease: 'easeInOut' }}
+              />
+              <motion.circle
+                cx="192"
+                cy="390"
+                r="22"
+                fill="url(#splashAccentGrad)"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 1.2, duration: 0.3 }}
+              />
+            </svg>
+          </div>
+        </motion.div>
+
+        {/* Greeting text */}
+        <motion.h1
+          initial={{ opacity: 0, y: 30, filter: 'blur(10px)' }}
+          animate={{
+            opacity: phase === 'greeting' || phase === 'exit' ? 1 : 0,
+            y: phase === 'greeting' || phase === 'exit' ? 0 : 30,
+            filter: phase === 'greeting' || phase === 'exit' ? 'blur(0px)' : 'blur(10px)',
+          }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="text-4xl font-display font-bold text-text mb-3 tracking-tight"
+        >
           Hey, {firstName}
-        </h1>
+        </motion.h1>
+
+        {/* Motivational phrase */}
         <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.3 }}
-          className="text-xl text-accent font-medium"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{
+            opacity: phase === 'greeting' || phase === 'exit' ? 1 : 0,
+            y: phase === 'greeting' || phase === 'exit' ? 0 : 20,
+          }}
+          transition={{ duration: 0.4, delay: 0.15, ease: 'easeOut' }}
+          className="text-lg tracking-wide uppercase"
+          style={{
+            background: `linear-gradient(135deg, ${accentColor}, ${aiColor})`,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
         >
           {phrase}
         </motion.p>
-      </motion.div>
 
-      {/* Animated line underneath */}
-      <motion.div
-        initial={{ scaleX: 0 }}
-        animate={{ scaleX: 1 }}
-        transition={{ delay: 0.8, duration: 0.6, ease: 'easeOut' }}
-        className="mt-8 w-16 h-0.5 bg-gradient-to-r from-transparent via-accent to-transparent origin-center"
-      />
+        {/* Decorative line below */}
+        <motion.div
+          initial={{ scaleX: 0, opacity: 0 }}
+          animate={{
+            scaleX: phase === 'greeting' || phase === 'exit' ? 1 : 0,
+            opacity: phase === 'greeting' || phase === 'exit' ? 1 : 0,
+          }}
+          transition={{ duration: 0.6, delay: 0.3, ease: 'easeOut' }}
+          className="mt-6 w-12 h-0.5 origin-center rounded-full"
+          style={{
+            background: `linear-gradient(90deg, ${accentColor}, ${aiColor})`,
+          }}
+        />
+      </div>
     </motion.div>
   )
 }
