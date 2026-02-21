@@ -784,8 +784,8 @@ export function PracticeScreen() {
         segments.push(words.slice(i, i + chunkSize).join(' '))
       }
     }
-    // Post-process: enforce max 8 words per segment (split long AI-generated segments)
-    const maxWords = 8
+    // Post-process: enforce max 5 words per segment (split long AI-generated segments)
+    const maxWords = 5
     const splitLong: string[] = []
     for (const seg of segments) {
       const words = seg.trim().split(/\s+/).filter(w => w)
