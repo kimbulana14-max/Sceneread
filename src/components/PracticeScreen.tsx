@@ -2806,7 +2806,7 @@ export function PracticeScreen() {
               >
                 <div 
                   onClick={() => canInteract && goTo(i, true)}
-                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/20 text-ai' : 'bg-overlay-5 text-text-muted'}`}
+                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/25 text-ai' : 'bg-overlay-5 text-text-muted'}`}
                 >
                   {line.content}
                   <button
@@ -2853,7 +2853,7 @@ export function PracticeScreen() {
               key={line.id} 
               ref={(el) => { if (el) lineRefs.current.set(i, el) }}
               animate={{ scale: isCurrent ? 1.01 : 1 }} 
-              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/15' : 'bg-ai/15') : isDone ? 'bg-success/5' : ''} ${isSelected ? 'bg-ai/10' : ''}`}
+              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? 'bg-ai/25' : isDone ? 'bg-success/5' : ''} ${isSelected ? 'bg-ai/15' : ''}`}
             >
               <div className="p-3" onClick={handleLineTap}>
                 <div className="flex items-center gap-2 mb-1">
