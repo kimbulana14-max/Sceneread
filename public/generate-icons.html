@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate SceneRead Icons</title>
+  <style>
+    body { background: #1a1a1a; color: white; font-family: system-ui; padding: 40px; }
+    .icon-row { display: flex; gap: 20px; align-items: center; margin: 20px 0; }
+    canvas { border: 1px solid #333; }
+    button { padding: 12px 24px; background: #E11D48; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; }
+    button:hover { background: #BE123C; }
+    a { color: #FB7185; }
+  </style>
+</head>
+<body>
+  <h1>SceneRead App Icon Generator</h1>
+  <p>Click each button to download the icon at that size.</p>
+  
+  <div class="icon-row">
+    <canvas id="canvas512" width="512" height="512"></canvas>
+    <div>
+      <h3>512x512</h3>
+      <button onclick="download(512)">Download icon-512.png</button>
+    </div>
+  </div>
+  
+  <div class="icon-row">
+    <canvas id="canvas192" width="192" height="192"></canvas>
+    <div>
+      <h3>192x192</h3>
+      <button onclick="download(192)">Download icon-192.png</button>
+    </div>
+  </div>
+  
+  <div class="icon-row">
+    <canvas id="canvas180" width="180" height="180"></canvas>
+    <div>
+      <h3>180x180 (Apple Touch Icon)</h3>
+      <button onclick="download(180)">Download apple-touch-icon.png</button>
+    </div>
+  </div>
+
+  <script>
+    function drawIcon(ctx, size) {
+      const scale = size / 512;
+      
+      // Background gradient
+      const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+      bgGrad.addColorStop(0, '#0F0F12');
+      bgGrad.addColorStop(1, '#08080A');
+      
+      // Rounded rect background
+      const radius = 112 * scale;
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, radius);
+      ctx.fillStyle = bgGrad;
+      ctx.fill();
+      
+      // Accent gradient for S
+      const accentGrad = ctx.createLinearGradient(0, 0, size, size);
+      accentGrad.addColorStop(0, '#FB7185');
+      accentGrad.addColorStop(0.5, '#E11D48');
+      accentGrad.addColorStop(1, '#BE123C');
+      
+      // Draw S path
+      ctx.beginPath();
+      ctx.moveTo(330 * scale, 130 * scale);
+      ctx.lineTo(200 * scale, 130 * scale);
+      ctx.bezierCurveTo(130 * scale, 130 * scale, 130 * scale, 220 * scale, 200 * scale, 220 * scale);
+      ctx.lineTo(312 * scale, 220 * scale);
+      ctx.bezierCurveTo(382 * scale, 220 * scale, 382 * scale, 310 * scale, 312 * scale, 310 * scale);
+      ctx.lineTo(182 * scale, 310 * scale);
+      ctx.bezierCurveTo(112 * scale, 310 * scale, 112 * scale, 400 * scale, 182 * scale, 400 * scale);
+      ctx.lineTo(330 * scale, 400 * scale);
+      
+      ctx.strokeStyle = accentGrad;
+      ctx.lineWidth = 56 * scale;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    
+    function download(size) {
+      const canvas = document.getElementById('canvas' + size);
+      const filename = size === 180 ? 'apple-touch-icon.png' : `icon-${size}.png`;
+      
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+    
+    // Draw all sizes on load
+    window.onload = function() {
+      [512, 192, 180].forEach(size => {
+        const canvas = document.getElementById('canvas' + size);
+        const ctx = canvas.getContext('2d');
+        drawIcon(ctx, size);
+      });
+    }
+  </script>
+</body>
+</html>
