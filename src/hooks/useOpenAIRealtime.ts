@@ -41,7 +41,8 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const currentTranscriptRef = useRef<string>('')
-  
+  const isConnectedRef = useRef(false) // Ref-based connection state (no stale closures)
+
   // CRITICAL: Controls whether audio is actually sent to OpenAI
   // When false, we're connected but not sending audio (no billing)
   const sendingAudioRef = useRef(false)
@@ -53,6 +54,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
   const cleanup = useCallback(() => {
     console.log('[OpenAI Realtime] Cleanup called')
     sendingAudioRef.current = false
+    isConnectedRef.current = false
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
       mediaRecorderRef.current = null
@@ -174,6 +176,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
 
         socket.onopen = () => {
           console.log('[OpenAI Realtime] Connected! (audio paused until startListening)')
+          isConnectedRef.current = true
           setIsConnected(true)
           // NOTE: isListening stays false until startListening() is called
           // Audio capture starts but sendingAudioRef is false, so no billing yet
@@ -233,6 +236,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
         socket.onclose = (event) => {
           console.log('[OpenAI Realtime] Connection closed:', event.code, event.reason)
           sendingAudioRef.current = false
+          isConnectedRef.current = false
           setIsConnected(false)
           setIsListening(false)
           onDisconnect?.()
@@ -350,6 +354,11 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     })
   }, [])
 
+  // Check connection using ref (never stale in closures)
+  const checkConnected = useCallback(() => {
+    return isConnectedRef.current && socketRef.current?.readyState === WebSocket.OPEN
+  }, [])
+
   return {
     isConnected,
     isListening,
@@ -357,7 +366,8 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     startListening,  // Start sending audio (billing begins)
     pauseListening,  // Stop sending audio (billing stops, connection kept)
     stopSession,     // Full disconnect
-    updatePrompt,    // Update Whisper prompt for expected line
+    updatePrompt,    // Update Whisper prompt for expected line (instant, no reconnect!)
+    checkConnected,  // Ref-based connection check (never stale)
     startRecording,  // Start recording mic for playback
     stopRecording,   // Stop recording and get audio blob
   }
