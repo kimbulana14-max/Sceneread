@@ -290,11 +290,9 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     const socket = socketRef.current
     if (!socket || socket.readyState !== WebSocket.OPEN) return
 
-    // Build prompt: expected line (truncated) + filler suffix
-    const truncated = expectedLine.slice(0, 200)
-    const prompt = truncated
-      ? `${truncated} Umm, let me think, hmm... mhm, uh-huh`
-      : 'Umm, let me think like, hmm... mhm, mm-hmm, uh-huh, uh, ah, er, um, hm, yeah, yea, yep, yup, nope, nah, okay, alright, mmm-hmm'
+    // Prompt = expected line text only — biases Whisper toward the actual words
+    // Do NOT add filler words (umm, hmm) — they cause Whisper to hallucinate fillers
+    const prompt = expectedLine.slice(0, 200)
 
     console.log('[OpenAI Realtime] Updating prompt:', prompt.slice(0, 60) + '...')
     socket.send(JSON.stringify({
