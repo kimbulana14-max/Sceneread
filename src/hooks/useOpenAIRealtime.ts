@@ -303,6 +303,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
         audio: {
           input: {
             transcription: {
+              model: 'gpt-4o-transcribe',
               prompt,
             },
           },
