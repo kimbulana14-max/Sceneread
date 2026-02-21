@@ -259,6 +259,32 @@ export function PracticeScreen() {
     return terms.slice(0, 80)
   }, [characters])
 
+  // Session-level keyterms: all character names + unique words from ALL user lines
+  // Set once at connection time — no per-line WebSocket reconnect needed
+  const getSessionKeyterms = useCallback((): string[] => {
+    const seen = new Set<string>()
+    const terms: string[] = []
+    // Character names first (highest priority)
+    characters.forEach(c => {
+      if (c.name && c.name.length >= 2 && !seen.has(c.name.toLowerCase())) {
+        seen.add(c.name.toLowerCase())
+        terms.push(c.name)
+      }
+    })
+    // Add unique words from all user lines (2+ chars to catch "hi", "no", "oh" etc)
+    lines.forEach(line => {
+      if (!line.is_user_line) return
+      const words = line.content.replace(/\([^)]*\)/g, '').replace(/[^\w\s'-]/g, '').split(/\s+/)
+      words.forEach(w => {
+        if (w.length >= 2 && !seen.has(w.toLowerCase())) {
+          seen.add(w.toLowerCase())
+          terms.push(w)
+        }
+      })
+    })
+    return terms.slice(0, 100) // Deepgram limit ~100 keyterms
+  }, [characters, lines])
+
   // Deepgram Nova-3 - STT with keyterm prompting
   const deepgram = useDeepgram({
     onPartialTranscript: (data) => {
@@ -549,11 +575,8 @@ export function PracticeScreen() {
     try {
       console.log('[STT] Starting session (audio paused until listening)...')
 
-      // Deepgram - connects with ALL character names as keyterms (set once, no per-line reconnect)
-      const sessionKeyterms = characters
-        .filter(c => c.name && c.name.length >= 2)
-        .map(c => c.name)
-      const success = await deepgram.startSession(sessionKeyterms)
+      // Deepgram - connects with all scene vocabulary as keyterms (set once, no per-line reconnect)
+      const success = await deepgram.startSession(getSessionKeyterms())
       if (!success) {
         throw new Error('Failed to connect')
       }
@@ -1218,7 +1241,7 @@ export function PracticeScreen() {
     // Uses character names as keyterms (set once, no per-line reconnect needed)
     if (learningMode !== 'listen' && !deepgram.checkConnected()) {
       console.log('[Play] Pre-reconnecting STT session in background...')
-      const sessionKeyterms = characters.filter(c => c.name && c.name.length >= 2).map(c => c.name)
+      const sessionKeyterms = getSessionKeyterms()
       deepgram.startSession(sessionKeyterms).catch(() => {})
     }
     
@@ -1519,7 +1542,7 @@ export function PracticeScreen() {
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      const sessionKeyterms = characters.filter(c => c.name && c.name.length >= 2).map(c => c.name)
+      const sessionKeyterms = getSessionKeyterms()
       await deepgram.startSession(sessionKeyterms)
       started = deepgram.startListening()
       if (!started) {
@@ -1627,7 +1650,7 @@ export function PracticeScreen() {
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      const sessionKeyterms = characters.filter(c => c.name && c.name.length >= 2).map(c => c.name)
+      const sessionKeyterms = getSessionKeyterms()
       await deepgram.startSession(sessionKeyterms)
       started = deepgram.startListening()
       if (!started) {
