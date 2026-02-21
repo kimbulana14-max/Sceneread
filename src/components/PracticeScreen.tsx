@@ -549,9 +549,11 @@ export function PracticeScreen() {
     try {
       console.log('[STT] Starting session (audio paused until listening)...')
 
-      // Deepgram - connects but doesn't send audio yet
-      const keyterms = getKeyterms(expectedLineRef.current || '')
-      const success = await deepgram.startSession(keyterms)
+      // Deepgram - connects with ALL character names as keyterms (set once, no per-line reconnect)
+      const sessionKeyterms = characters
+        .filter(c => c.name && c.name.length >= 2)
+        .map(c => c.name)
+      const success = await deepgram.startSession(sessionKeyterms)
       if (!success) {
         throw new Error('Failed to connect')
       }
@@ -1213,10 +1215,11 @@ export function PracticeScreen() {
     console.log('[Play] is_user_line:', currentLine.is_user_line, 'learningMode:', learningMode)
 
     // Pre-reconnect STT session in background so it's ready when recording starts
-    // Uses ref-based check (never stale) instead of React state
+    // Uses character names as keyterms (set once, no per-line reconnect needed)
     if (learningMode !== 'listen' && !deepgram.checkConnected()) {
       console.log('[Play] Pre-reconnecting STT session in background...')
-      deepgram.startSession(getKeyterms(stripParentheticals(currentLine?.content || ''))).catch(() => {})
+      const sessionKeyterms = characters.filter(c => c.name && c.name.length >= 2).map(c => c.name)
+      deepgram.startSession(sessionKeyterms).catch(() => {})
     }
     
     // Repeat mode: Progressive build for user lines
@@ -1507,18 +1510,17 @@ export function PracticeScreen() {
     setAnimatedWordIndex(0)
     setWordResults([])
     listeningRef.current = true
-    lastSpeechRef.current = Date.now()
-    setStatus('listening')
     if (settings.playYourTurnCue) playYourTurn()
 
-    // Update Deepgram keyterms to boost expected words (await reconnect!)
-    await deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
+    // Show "connecting" until audio is actually flowing
+    setStatus('connecting')
 
     // Start sending audio to Deepgram — if connection died, reconnect first
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await deepgram.startSession(getKeyterms(expectedLineRef.current))
+      const sessionKeyterms = characters.filter(c => c.name && c.name.length >= 2).map(c => c.name)
+      await deepgram.startSession(sessionKeyterms)
       started = deepgram.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1528,6 +1530,10 @@ export function PracticeScreen() {
         return
       }
     }
+
+    // NOW audio is flowing — safe to show "listening"
+    lastSpeechRef.current = Date.now()
+    setStatus('listening')
 
     // Start recording user audio for playback
     deepgram.startRecording()
@@ -1595,11 +1601,11 @@ export function PracticeScreen() {
     busyRef.current = false
   }
 
-  const startListening = async () => { 
+  const startListening = async () => {
     // Increment session nonce to invalidate any pending transcripts from previous session
     listenSessionRef.current = Date.now()
-    transcriptRef.current = ''; 
-    committedTextRef.current = ''; 
+    transcriptRef.current = '';
+    committedTextRef.current = '';
     lockedStateRef.current = createFreshLockedState();
     expectedLineRef.current = stripParentheticals(currentLine?.content || '');
     setTranscript('');
@@ -1612,17 +1618,17 @@ export function PracticeScreen() {
     setAnimatedWordIndex(0)
     setWordResults([])
     listeningRef.current = true;
-    lastSpeechRef.current = Date.now();
-    setStatus('listening');
 
-    // Update Deepgram keyterms to boost expected words (await reconnect!)
-    await deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
+    // Show "connecting" while we ensure STT is ready — don't show "listening"
+    // until audio is actually being captured (prevents lost first words)
+    setStatus('connecting');
 
     // Start sending audio to Deepgram — if connection died, reconnect first
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await deepgram.startSession(getKeyterms(expectedLineRef.current))
+      const sessionKeyterms = characters.filter(c => c.name && c.name.length >= 2).map(c => c.name)
+      await deepgram.startSession(sessionKeyterms)
       started = deepgram.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1632,6 +1638,10 @@ export function PracticeScreen() {
         return
       }
     }
+
+    // NOW audio is flowing — safe to show "listening" and start the clock
+    lastSpeechRef.current = Date.now();
+    setStatus('listening');
 
     // Start recording user audio for playback
     deepgram.startRecording()
