@@ -8,8 +8,8 @@
   --bg-surface: #141418;
   --bg-surface-hover: #1A1A1F;
   --bg-subtle: #1E1E24;
-  --border: rgba(255,255,255,0.06);
-  --border-hover: rgba(255,255,255,0.1);
+  --border: rgba(255,255,255,0.03);
+  --border-hover: rgba(255,255,255,0.06);
   --text: #FAFAFA;
   --text-secondary: #A1A1AA;
   --text-muted: #71717A;

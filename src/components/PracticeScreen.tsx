@@ -857,8 +857,9 @@ export function PracticeScreen() {
         audioRef.current.currentTime = 0 // Ensure we start from beginning
         await new Promise<void>(resolve => {
           const audio = audioRef.current!
-          audio.onloadeddata = () => {
-            console.log('[TTS] Audio loaded, duration:', audio.duration, 'currentTime:', audio.currentTime)
+          const timeout = setTimeout(() => resolve(), 3000) // fallback timeout
+          audio.oncanplaythrough = () => {
+            clearTimeout(timeout)
             resolve()
           }
           audio.load()
@@ -1178,6 +1179,13 @@ export function PracticeScreen() {
     busyRef.current = true
     const isNarrator = currentLine.line_type === 'action' || currentLine.line_type === 'transition'
     console.log('[Play] is_user_line:', currentLine.is_user_line, 'learningMode:', learningMode)
+
+    // Pre-reconnect STT session in background so it's ready when recording starts
+    // This prevents the 2-3s delay if the WebSocket dropped during idle time
+    if (learningMode !== 'listen' && !openaiRealtime.isConnected) {
+      console.log('[Play] Pre-reconnecting STT session in background...')
+      openaiRealtime.startSession().catch(() => {})
+    }
     
     // Repeat mode: Progressive build for user lines
     if (learningMode === 'repeat') {

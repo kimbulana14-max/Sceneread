@@ -188,7 +188,7 @@ export const defaultSettings: PracticeSettings = {
   playSoundOnWrong: true,
   speakErrorFeedback: true,
   autoAdvanceOnCorrect: true,
-  autoAdvanceDelay: 100,
+  autoAdvanceDelay: 50,
   autoStartRecording: true,
   silenceDuration: 1500,
   showLiveTranscript: true,
