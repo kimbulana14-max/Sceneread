@@ -683,7 +683,7 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.4 }}
-                  className="absolute inset-0 px-5 py-5 rounded-2xl bg-bg-surface/60 backdrop-blur-xl border border-overlay-5"
+                  className="absolute inset-0 px-5 py-5 rounded-2xl bg-bg-surface/60 backdrop-blur-xl border border-border"
                 >
                   <div className="flex flex-col items-center text-center gap-3 h-full justify-center">
                     <div className="w-9 h-9 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">

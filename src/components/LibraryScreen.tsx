@@ -445,7 +445,7 @@ export function LibraryScreen() {
                           handleSelectScript(script)
                         }
                       }}
-                      className="relative bg-bg-elevated border border-overlay-5 rounded-xl p-4 cursor-pointer"
+                      className="relative bg-bg-elevated border border-border rounded-xl p-4 cursor-pointer"
                     >
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex-1 min-w-0">
@@ -492,7 +492,7 @@ export function LibraryScreen() {
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-overlay-5">
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-border">
                               <button
                                 onClick={(e) => { e.stopPropagation(); setVoiceSetupScript(script); setSwipedScriptId(null); }}
                                 className="flex-1 py-2.5 rounded-lg bg-bg-surface flex items-center justify-center gap-2 text-sm text-text-muted hover:text-accent transition-colors"
@@ -567,7 +567,7 @@ export function LibraryScreen() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-bg-elevated rounded-xl p-6 border border-overlay-5"
+              className="w-full max-w-sm bg-bg-elevated rounded-xl p-6 border border-border"
             >
               <div className="w-12 h-12 rounded-full bg-error/20 flex items-center justify-center mx-auto mb-4">
                 <svg className="w-6 h-6 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -967,7 +967,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
           exit={{ opacity: 0, scale: 0.9 }}
           className="absolute inset-0 flex items-center justify-center p-6"
         >
-          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-overlay-10 overflow-hidden">
+          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-border overflow-hidden">
             {/* Header with checkmark */}
             <div className="relative h-20 bg-gradient-to-br from-accent/20 to-transparent flex items-center justify-center">
               <motion.div
@@ -1048,7 +1048,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
           animate={{ opacity: 1, scale: 1 }}
           className="absolute inset-0 flex items-center justify-center p-6"
         >
-          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-overlay-10 p-6">
+          <div className="w-full max-w-sm bg-bg-elevated rounded-2xl border border-border p-6">
             <div className="flex flex-col items-center">
               {/* Animated rings */}
               <div className="relative w-20 h-20 mb-5">

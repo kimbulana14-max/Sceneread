@@ -293,7 +293,7 @@ export function PDFVisualPreview({
           <div className="max-w-full max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             {loadingPreview ? (
               <div className="w-64 h-96 flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-text-subtle border-t-transparent rounded-full animate-spin" />
               </div>
             ) : previewUrl ? (
               <img 
@@ -355,7 +355,7 @@ export function PDFVisualPreview({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                   </svg>
                 ) : (
-                  <div className="w-3.5 h-3.5 rounded border-2 border-white/80" />
+                  <div className="w-3.5 h-3.5 rounded border-2 border-text-muted" />
                 )}
               </div>
               

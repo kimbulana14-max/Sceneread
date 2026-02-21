@@ -8,7 +8,7 @@ import { Card, Button, ProgressBar } from './ui'
 import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMic, IconCheck, IconLoop, IconSettings } from './icons'
 import { EditModal, updateLine, updateCharacter, updateScript, deleteLine, addLine } from './EditModal'
 import { supabase, getAuthHeaders } from '@/lib/supabase'
-import { useOpenAIRealtime } from '@/hooks/useOpenAIRealtime'
+import { useDeepgram } from '@/hooks/useDeepgram'
 import { triggerAchievementCheck } from '@/hooks/useAchievements'
 
 import { audioManager, playTone as audioPlayTone } from '@/lib/audioManager'
@@ -214,6 +214,7 @@ export function PracticeScreen() {
   const wordAnimationRef = useRef<NodeJS.Timeout | null>(null) // Timer for word animation
   const reconnectRef = useRef<(() => Promise<void>) | null>(null) // For auto-reconnect on disconnect
   const listenSessionRef = useRef<number>(0) // Session nonce to ignore stale transcripts
+  const segmentNonceRef = useRef<number>(0) // Nonce to prevent race conditions in repeat mode
   const segmentsRef = useRef<string[]>([]) // Current segments (ref for async callbacks)
   const currentSegmentIndexRef = useRef<number>(0) // Current segment index (ref for async callbacks)
   const pendingListenRef = useRef<(() => void) | null>(null) // Pending listen action when autoStartRecording is off
@@ -237,8 +238,28 @@ export function PracticeScreen() {
     return names
   }, [characters])
 
-  // OpenAI Realtime - STT with filler word support
-  const openaiRealtime = useOpenAIRealtime({
+  // Extract keyterms from expected text + character names for Deepgram
+  const getKeyterms = useCallback((expectedText: string): string[] => {
+    const terms: string[] = []
+    // Add character names (proper nouns — capitalize for Deepgram)
+    characters.forEach(c => {
+      if (c.name && c.name.length >= 2) terms.push(c.name)
+    })
+    // Add unique words from expected text (3+ chars, deduplicated)
+    const seen = new Set(terms.map(t => t.toLowerCase()))
+    const words = expectedText.replace(/[^\w\s'-]/g, '').split(/\s+/)
+    words.forEach(w => {
+      if (w.length >= 3 && !seen.has(w.toLowerCase())) {
+        seen.add(w.toLowerCase())
+        terms.push(w)
+      }
+    })
+    // Deepgram allows up to ~100 keyterms / 500 tokens
+    return terms.slice(0, 80)
+  }, [characters])
+
+  // Deepgram Nova-3 - STT with keyterm prompting
+  const deepgram = useDeepgram({
     onPartialTranscript: (data) => {
       if (!listeningRef.current) return
       // Ignore non-speech events
@@ -347,7 +368,8 @@ export function PracticeScreen() {
   useEffect(() => {
     reconnectRef.current = async () => {
       console.log('[STT] Attempting reconnect...')
-      const success = await openaiRealtime.startSession()
+      const keyterms = getKeyterms(expectedLineRef.current || '')
+      const success = await deepgram.startSession(keyterms)
       if (success) {
         console.log('[STT] Reconnected successfully')
         setMicReady(true)
@@ -355,7 +377,7 @@ export function PracticeScreen() {
         console.error('[STT] Failed to reconnect')
       }
     }
-  }, [openaiRealtime])
+  }, [deepgram, getKeyterms])
   
   // Load saved practice state when script changes
   useEffect(() => {
@@ -490,7 +512,7 @@ export function PracticeScreen() {
   useEffect(() => { 
     if (!isPlaying) {
       console.log('[STT] Paused - stopping audio send')
-      openaiRealtime.pauseListening()
+      deepgram.pauseListening()
       // Don't disconnect - keep connection warm for quick resume
       // Full cleanup happens after 30s of inactivity or on unmount
     }
@@ -511,8 +533,8 @@ export function PracticeScreen() {
 
   const cleanup = () => {
     cancelAnimationFrame(frameRef.current)
-    openaiRealtime.pauseListening() // Stop audio first
-    openaiRealtime.stopSession()    // Then disconnect
+    deepgram.pauseListening() // Stop audio first
+    deepgram.stopSession()    // Then disconnect
     if (countdownRef.current) clearInterval(countdownRef.current)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
@@ -523,9 +545,10 @@ export function PracticeScreen() {
     setStatus('connecting')
     try {
       console.log('[STT] Starting session (audio paused until listening)...')
-      
-      // OpenAI Realtime - connects but doesn't send audio yet
-      const success = await openaiRealtime.startSession()
+
+      // Deepgram - connects but doesn't send audio yet
+      const keyterms = getKeyterms(expectedLineRef.current || '')
+      const success = await deepgram.startSession(keyterms)
       if (!success) {
         throw new Error('Failed to connect')
       }
@@ -579,8 +602,8 @@ export function PracticeScreen() {
     listeningRef.current = false
     busyRef.current = false
     
-    // CRITICAL: Stop sending audio to OpenAI immediately (billing stops)
-    openaiRealtime.pauseListening()
+    // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
+    deepgram.pauseListening()
     
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     setStatus('idle')
@@ -1146,8 +1169,8 @@ export function PracticeScreen() {
     listeningRef.current = false
     busyRef.current = false
     
-    // CRITICAL: Stop sending audio to OpenAI immediately (billing stops)
-    openaiRealtime.pauseListening()
+    // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
+    deepgram.pauseListening()
     
     if (silenceTimerRef.current) {
       clearInterval(silenceTimerRef.current)
@@ -1181,10 +1204,10 @@ export function PracticeScreen() {
     console.log('[Play] is_user_line:', currentLine.is_user_line, 'learningMode:', learningMode)
 
     // Pre-reconnect STT session in background so it's ready when recording starts
-    // This prevents the 2-3s delay if the WebSocket dropped during idle time
-    if (learningMode !== 'listen' && !openaiRealtime.isConnected) {
+    // Uses ref-based check (never stale) instead of React state
+    if (learningMode !== 'listen' && !deepgram.checkConnected()) {
       console.log('[Play] Pre-reconnecting STT session in background...')
-      openaiRealtime.startSession().catch(() => {})
+      deepgram.startSession(getKeyterms(stripParentheticals(currentLine?.content || ''))).catch(() => {})
     }
     
     // Repeat mode: Progressive build for user lines
@@ -1470,16 +1493,16 @@ export function PracticeScreen() {
     setStatus('listening')
     if (settings.playYourTurnCue) playYourTurn()
 
-    // Update Whisper prompt to bias toward expected line
-    openaiRealtime.updatePrompt(expectedLineRef.current)
+    // Update Deepgram keyterms to boost expected words
+    deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
 
-    // CRITICAL: Start sending audio to OpenAI (billing starts here)
+    // CRITICAL: Start sending audio to Deepgram (billing starts here)
     // If connection died, reconnect first
-    let started = openaiRealtime.startListening()
+    let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await openaiRealtime.startSession()
-      started = openaiRealtime.startListening()
+      await deepgram.startSession(getKeyterms(expectedLineRef.current))
+      started = deepgram.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
@@ -1489,7 +1512,7 @@ export function PracticeScreen() {
     }
 
     // Start recording user audio for playback
-    openaiRealtime.startRecording()
+    deepgram.startRecording()
 
     // Timeout if no speech, emergency fallback
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
@@ -1515,8 +1538,8 @@ export function PracticeScreen() {
   const handleBuildTimeout = async () => {
     listeningRef.current = false
     
-    // CRITICAL: Stop sending audio to OpenAI immediately (billing stops)
-    openaiRealtime.pauseListening()
+    // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
+    deepgram.pauseListening()
     
     playIncorrect()
     setTranscript(transcriptRef.current || '(timeout)')
@@ -1574,16 +1597,16 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
-    // Update Whisper prompt to bias toward expected line
-    openaiRealtime.updatePrompt(expectedLineRef.current)
+    // Update Deepgram keyterms to boost expected words
+    deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
 
-    // CRITICAL: Start sending audio to OpenAI (billing starts here)
+    // CRITICAL: Start sending audio to Deepgram (billing starts here)
     // If connection died, reconnect first
-    let started = openaiRealtime.startListening()
+    let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await openaiRealtime.startSession()
-      started = openaiRealtime.startListening()
+      await deepgram.startSession(getKeyterms(expectedLineRef.current))
+      started = deepgram.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
@@ -1593,7 +1616,7 @@ export function PracticeScreen() {
     }
 
     // Start recording user audio for playback
-    openaiRealtime.startRecording()
+    deepgram.startRecording()
 
     // Silence timer - evaluate after 1.0s of silence
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
@@ -1627,16 +1650,16 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
-    // Update Whisper prompt to bias toward expected line
-    openaiRealtime.updatePrompt(expectedLineRef.current)
+    // Update Deepgram keyterms to boost expected words
+    deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
 
-    // CRITICAL: Start sending audio to OpenAI (billing starts here)
+    // CRITICAL: Start sending audio to Deepgram (billing starts here)
     // If connection died, reconnect first
-    let started = openaiRealtime.startListening()
+    let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await openaiRealtime.startSession()
-      started = openaiRealtime.startListening()
+      await deepgram.startSession(getKeyterms(expectedLineRef.current))
+      started = deepgram.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
@@ -1664,11 +1687,11 @@ export function PracticeScreen() {
     if (!listeningRef.current) return
     listeningRef.current = false
 
-    // CRITICAL: Stop sending audio to OpenAI immediately (billing stops)
-    openaiRealtime.pauseListening()
+    // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
+    deepgram.pauseListening()
 
     // Stop recording and store blob for playback
-    openaiRealtime.stopRecording().then(blob => {
+    deepgram.stopRecording().then(blob => {
       if (blob && blob.size > 0) {
         lastRecordingRef.current = blob
         setHasRecording(true)
@@ -1722,29 +1745,33 @@ export function PracticeScreen() {
           setBuildProgress(prevIndex)
           setConsecutiveWrongs(0) // Reset counter
           setStatus('wrong') // Show wrong state with word-by-word results
+          const nonce = ++segmentNonceRef.current
           setTimeout(async () => {
-            if (!isPlayingRef.current) return // User paused, don't continue
-            setWordResults([]) // Clear results before retry
+            if (segmentNonceRef.current !== nonce) return // Stale
+            if (!isPlayingRef.current) return
+            setWordResults([])
             setStatus('segment')
             const accumulatedText = segs.slice(0, prevIndex + 1).join(' ')
             await playSegmentLiveTTS(accumulatedText)
-            if (!isPlayingRef.current) return // User paused during TTS
+            if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
             startListeningForBuild(accumulatedText)
             busyRef.current = false
-          }, 2000) // 2 seconds to see results
+          }, 2000)
         } else {
           // Auto-retry current segment after pause to see results
           setStatus('wrong') // Show wrong state with word-by-word results
+          const nonce = ++segmentNonceRef.current
           setTimeout(async () => {
-            if (!isPlayingRef.current) return // User paused, don't continue
-            setWordResults([]) // Clear results before retry
+            if (segmentNonceRef.current !== nonce) return // Stale
+            if (!isPlayingRef.current) return
+            setWordResults([])
             setStatus('segment')
             const accumulatedText = segs.slice(0, segIdx + 1).join(' ')
             await playSegmentLiveTTS(accumulatedText)
-            if (!isPlayingRef.current) return // User paused during TTS
+            if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
             startListeningForBuild(accumulatedText)
             busyRef.current = false
-          }, 2000) // 2 seconds to see results
+          }, 2000)
         }
       } else {
         setStatus('wrong')
@@ -1813,11 +1840,12 @@ export function PracticeScreen() {
             setFullLineCompletions(newCompletions)
             if (settings.playSoundOnCorrect) playCorrect()
             setStatus('segment')
+            const nonce = ++segmentNonceRef.current
             setTimeout(async () => {
-              // Play full line again
+              if (segmentNonceRef.current !== nonce) return
               const fullText = segs.join(' ')
               await playSegmentLiveTTS(fullText)
-              if (!isPlayingRef.current) return
+              if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
               startListeningForBuild(fullText)
               busyRef.current = false
             }, 500)
@@ -1849,7 +1877,9 @@ export function PracticeScreen() {
           if (scriptId) saveRepeatProgress(scriptId, nextIndex, nextIndex)
           // Play the accumulated text (now including next segment)
           const accumulatedText = segs.slice(0, nextIndex + 1).join(' ')
+          const nonce = ++segmentNonceRef.current // Guard against race conditions
           playSegmentLiveTTS(accumulatedText).then(() => {
+            if (segmentNonceRef.current !== nonce) return // Stale callback, another action took over
             if (!isPlayingRef.current) return // User paused, don't continue
             startListeningForBuild(accumulatedText)
             busyRef.current = false
@@ -1898,37 +1928,41 @@ export function PracticeScreen() {
         // Increment consecutive wrongs
         const newWrongCount = consecutiveWrongs + 1
         setConsecutiveWrongs(newWrongCount)
-        
+
         // If 3 wrongs in a row and not on first segment, go back
         if (newWrongCount >= 3 && segIdx > 0) {
           const prevIndex = segIdx - 1
           setCurrentSegmentIndex(prevIndex)
           setBuildProgress(prevIndex)
           setConsecutiveWrongs(0) // Reset counter
-          setStatus('wrong') // Show wrong state with word-by-word results
+          setStatus('wrong')
+          const nonce = ++segmentNonceRef.current
           setTimeout(async () => {
+            if (segmentNonceRef.current !== nonce) return
             if (!isPlayingRef.current) return
-            setWordResults([]) // Clear results before retry
+            setWordResults([])
             setStatus('segment')
             const accumulatedText = segs.slice(0, prevIndex + 1).join(' ')
             await playSegmentLiveTTS(accumulatedText)
-            if (!isPlayingRef.current) return
+            if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
             startListeningForBuild(accumulatedText)
             busyRef.current = false
-          }, 2000) // 2 seconds to see word-by-word results
+          }, 2000)
         } else {
           // Auto-retry current segment after pause to show results
-          setStatus('wrong') // Show wrong state with word-by-word results
+          setStatus('wrong')
+          const nonce = ++segmentNonceRef.current
           setTimeout(async () => {
-            if (!isPlayingRef.current) return // User paused, don't continue
-            setWordResults([]) // Clear results before retry
+            if (segmentNonceRef.current !== nonce) return
+            if (!isPlayingRef.current) return
+            setWordResults([])
             setStatus('segment')
             const accumulatedText = segs.slice(0, segIdx + 1).join(' ')
             await playSegmentLiveTTS(accumulatedText)
-            if (!isPlayingRef.current) return // User paused during TTS
+            if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
             startListeningForBuild(accumulatedText)
             busyRef.current = false
-          }, 2000) // 2 seconds to see word-by-word results
+          }, 2000)
         }
       } else {
         setStatus('wrong')
@@ -1991,8 +2025,8 @@ export function PracticeScreen() {
   const stopListening = () => {
     listeningRef.current = false
     
-    // CRITICAL: Stop sending audio to OpenAI immediately (billing stops)
-    openaiRealtime.pauseListening()
+    // CRITICAL: Stop sending audio to Deepgram immediately (billing stops)
+    deepgram.pauseListening()
     
     if (silenceTimerRef.current) {
       clearInterval(silenceTimerRef.current)
@@ -3116,7 +3150,7 @@ export function PracticeScreen() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className="w-full max-w-sm bg-bg-elevated rounded-xl border border-overlay-10 overflow-hidden"
+              className="w-full max-w-sm bg-bg-elevated rounded-xl border border-border overflow-hidden"
             >
               <div className="p-6 text-center">
                 <div className="text-sm text-text-muted mb-2">Scene Complete</div>
@@ -3213,7 +3247,7 @@ export function PracticeScreen() {
         
         {/* Segment progress bar - only show in repeat mode with segments */}
         {learningMode === 'repeat' && segments.length > 0 && currentLine?.is_user_line && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-surface/90 backdrop-blur border border-overlay-10">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-surface/90 backdrop-blur border border-border">
             <span className="text-[10px] text-text-muted whitespace-nowrap">
               {currentSegmentIndex + 1}/{segments.length}
             </span>

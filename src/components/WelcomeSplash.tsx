@@ -70,7 +70,7 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
         }}
         className="relative mb-8"
       >
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-bg-elevated to-bg flex items-center justify-center shadow-lg shadow-accent/30 border border-overlay-5">
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-bg-elevated to-bg flex items-center justify-center shadow-lg shadow-accent/30 border border-border">
           <svg className="w-12 h-12" viewBox="0 0 512 512" fill="none">
             <defs>
               <linearGradient id="splashAccent" x1="0%" y1="0%" x2="100%" y2="100%">
