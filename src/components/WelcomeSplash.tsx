@@ -16,16 +16,61 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
 
   const firstName = name?.split(' ')[0] || 'Actor'
 
-  const phrases = [
-    "Time to shine",
-    "Break a leg",
-    "The stage is yours",
-    "Lights, camera, action",
-    "Your scene awaits",
-    "Take center stage",
+  // Inspiring quotes about acting, theatre, and performance
+  const quotes: { text: string; author: string }[] = [
+    { text: "Acting is behaving truthfully under imaginary circumstances.", author: "Sanford Meisner" },
+    { text: "The best acting is instinctive. It's not intellectual, it's not mechanical, it's instinctive.", author: "Craig MacDonald" },
+    { text: "An actor is at most a poet and at least an entertainer.", author: "Marlon Brando" },
+    { text: "Without wonder and insight, acting is just a trade.", author: "Bette Davis" },
+    { text: "Create your own method. Don't depend slavishly on mine.", author: "Lee Strasberg" },
+    { text: "Use what you know. Don't worry about what you don't know.", author: "Michael Shurtleff" },
+    { text: "Find in yourself those human things which are universal.", author: "Sanford Meisner" },
+    { text: "The actor has to develop his body. The actor has to work on his voice.", author: "Stella Adler" },
+    { text: "Stop explaining yourself. Shut up and act.", author: "Craig MacDonald" },
+    { text: "That's what makes acting so attractive. You get to break all your own rules.", author: "Robert De Niro" },
+    { text: "Life beats down and crushes the soul and art reminds you that you have one.", author: "Stella Adler" },
+    { text: "Acting is not about being someone different. It's finding the similarity in what is apparently different.", author: "Meryl Streep" },
+    { text: "I regard the theatre as the greatest of all art forms.", author: "Oscar Wilde" },
+    { text: "All the world's a stage, and all the men and women merely players.", author: "William Shakespeare" },
+    { text: "Theatre is a form of knowledge; it should and can also be a means of transforming society.", author: "Augusto Boal" },
+    { text: "The stage is not merely the meeting place of all the arts, but is also the return of art to life.", author: "Oscar Wilde" },
+    { text: "Acting is the ability to live truthfully under given imaginary circumstances.", author: "Sanford Meisner" },
+    { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
+    { text: "Don't act. Be.", author: "Konstantin Stanislavski" },
+    { text: "The word theatre comes from the Greeks. It means the seeing place.", author: "Arthur Miller" },
+    { text: "In the theatre, every night is opening night.", author: "Unknown" },
+    { text: "Your only limitation is the one you set up in your own mind.", author: "Napoleon Hill" },
+    { text: "An ounce of behaviour is worth a pound of words.", author: "Sanford Meisner" },
+    { text: "The theatre is so endlessly fascinating because it's so accidental. It's so much like life.", author: "Arthur Miller" },
+    { text: "Talent is cheaper than table salt. What separates the talented from the successful is hard work.", author: "Stephen King" },
+    { text: "You've got to be original, because if you're like someone else, what do they need you for?", author: "Bernadette Peters" },
+    { text: "The art of acting consists in keeping people from coughing.", author: "Ralph Richardson" },
+    { text: "Every act of creation is first an act of destruction.", author: "Pablo Picasso" },
+    { text: "To practice any art, no matter how well or badly, is a way to make your soul grow.", author: "Kurt Vonnegut" },
+    { text: "The best way to predict the future is to create it.", author: "Peter Drucker" },
+    { text: "What we play is life.", author: "Louis Armstrong" },
+    { text: "Put your heart, mind, and soul into even your smallest acts.", author: "Swami Sivananda" },
+    { text: "Imagination is the beginning of creation.", author: "George Bernard Shaw" },
+    { text: "It's not about standing still and being safe. It's about growth.", author: "Viola Davis" },
+    { text: "I learned that courage was not the absence of fear, but the triumph over it.", author: "Nelson Mandela" },
+    { text: "When you want something, all the universe conspires in helping you to achieve it.", author: "Paulo Coelho" },
+    { text: "The purpose of art is washing the dust of daily life off our souls.", author: "Pablo Picasso" },
+    { text: "Do not wait to strike till the iron is hot, but make it hot by striking.", author: "W.B. Yeats" },
+    { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Aristotle" },
+    { text: "Take the risk or lose the chance.", author: "Unknown" },
+    { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },
+    { text: "Great things never came from comfort zones.", author: "Unknown" },
+    { text: "A creative man is motivated by the desire to achieve, not by the desire to beat others.", author: "Ayn Rand" },
+    { text: "Believe you can and you're halfway there.", author: "Theodore Roosevelt" },
+    { text: "If you hear a voice within you say 'you cannot paint,' then by all means paint.", author: "Vincent van Gogh" },
+    { text: "Success is not final, failure is not fatal: it is the courage to continue that counts.", author: "Winston Churchill" },
+    { text: "The best time to plant a tree was twenty years ago. The second best time is now.", author: "Chinese Proverb" },
+    { text: "Everything you can imagine is real.", author: "Pablo Picasso" },
+    { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+    { text: "Art is not what you see, but what you make others see.", author: "Edgar Degas" },
   ]
 
-  const phrase = useMemo(() => phrases[Math.floor(Math.random() * phrases.length)], [])
+  const quote = useMemo(() => quotes[Math.floor(Math.random() * quotes.length)], [])
 
   // Generate floating particles
   const particles = useMemo(() =>
@@ -45,8 +90,8 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('reveal'), 400)
     const t2 = setTimeout(() => setPhase('greeting'), 1000)
-    const t3 = setTimeout(() => setPhase('exit'), 2400)
-    const t4 = setTimeout(() => onCompleteRef.current(), 3000)
+    const t3 = setTimeout(() => setPhase('exit'), 3800)
+    const t4 = setTimeout(() => onCompleteRef.current(), 4400)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
   }, [])
 
@@ -210,24 +255,38 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
           Hey, {firstName}
         </motion.h1>
 
-        {/* Motivational phrase */}
-        <motion.p
+        {/* Quote */}
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{
             opacity: phase === 'greeting' || phase === 'exit' ? 1 : 0,
             y: phase === 'greeting' || phase === 'exit' ? 0 : 20,
           }}
-          transition={{ duration: 0.4, delay: 0.15, ease: 'easeOut' }}
-          className="text-lg tracking-wide uppercase"
-          style={{
-            background: `linear-gradient(135deg, ${accentColor}, ${aiColor})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}
+          transition={{ duration: 0.5, delay: 0.15, ease: 'easeOut' }}
+          className="text-center max-w-[280px] px-4"
         >
-          {phrase}
-        </motion.p>
+          <p
+            className="text-base italic leading-relaxed"
+            style={{
+              background: `linear-gradient(135deg, ${accentColor}, ${aiColor})`,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            &ldquo;{quote.text}&rdquo;
+          </p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: phase === 'greeting' || phase === 'exit' ? 0.6 : 0,
+            }}
+            transition={{ duration: 0.4, delay: 0.5, ease: 'easeOut' }}
+            className="text-xs text-text-muted mt-2"
+          >
+            &mdash; {quote.author}
+          </motion.p>
+        </motion.div>
 
         {/* Decorative line below */}
         <motion.div
