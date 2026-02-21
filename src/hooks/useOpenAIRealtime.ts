@@ -270,7 +270,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
       console.warn('[OpenAI Realtime] Cannot start listening - not connected')
       return false
     }
-    console.log('[OpenAI Realtime] START listening - audio sending enabled')
+    console.log('[OpenAI Realtime] START listening - clearing buffer and settling')
     currentTranscriptRef.current = ''
 
     // CRITICAL: Clear stale audio from previous turns before starting new listen
@@ -280,8 +280,19 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
       socketRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }))
     }
 
-    sendingAudioRef.current = true
-    setIsListening(true)
+    // CRITICAL: Delay audio sending by 300ms to let the buffer clear propagate.
+    // Without this delay, audio frames sent between the clear request and server
+    // processing get committed by VAD, and Whisper hallucinates the prompt text
+    // from near-empty audio (e.g., transcribing silence as the expected line).
+    sendingAudioRef.current = false
+    setIsListening(true) // Report as listening for UI immediately
+    setTimeout(() => {
+      if (isConnectedRef.current) {
+        sendingAudioRef.current = true
+        console.log('[OpenAI Realtime] Audio sending now enabled (after settle)')
+      }
+    }, 300)
+
     return true
   }, [isConnected])
 

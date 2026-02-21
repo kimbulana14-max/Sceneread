@@ -247,8 +247,8 @@ export function PracticeScreen() {
       if (!listeningRef.current) return
       // Ignore non-speech events
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
-      // Reject stale results from previous listening session
-      if (Date.now() - listenSessionRef.current < 500) return
+      // Reject stale/hallucinated results during settling period
+      if (Date.now() - listenSessionRef.current < 1500) return
       console.log('[STT] Partial:', JSON.stringify(data.text), 'committed so far:', JSON.stringify(committedTextRef.current))
 
       // Track cue pickup speed: first speech after AI finished
@@ -282,10 +282,11 @@ export function PracticeScreen() {
       if (!listeningRef.current) return
       // Ignore non-speech commits
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
-      // Reject stale results from previous listening session — STT may send
-      // delayed finals after we pause+restart. Real speech takes 500ms+ to commit.
-      if (Date.now() - listenSessionRef.current < 500) {
-        console.log('[STT] Discarding stale committed result:', data.text)
+      // Reject stale/hallucinated results — STT may send delayed finals after
+      // pause+restart, or Whisper may hallucinate the prompt text from near-empty
+      // audio. Real speech takes 1-2s+ to speak and commit.
+      if (Date.now() - listenSessionRef.current < 1500) {
+        console.log('[STT] Discarding early committed result (settling):', data.text)
         return
       }
       console.log('[STT] Committed:', JSON.stringify(data.text), 'prev committed:', JSON.stringify(committedTextRef.current))
