@@ -1265,7 +1265,11 @@ export function PracticeScreen() {
           await speakCharacterName(currentLine.character_name, charVoice, currentLine.audio_url_name)
           await speakParenthetical(currentLine.parenthetical, currentLine.audio_url_parenthetical)
         }
-        await playAudio(currentLine.audio_url)
+        if (currentLine.audio_url) {
+          await playAudio(currentLine.audio_url)
+        } else {
+          await playSegmentLiveTTS(currentLine.content)
+        }
         setStatus('idle')
         busyRef.current = false
         if (isPlayingRef.current) next()
@@ -1348,7 +1352,7 @@ export function PracticeScreen() {
       
       aiFinishTimeRef.current = Date.now()
       if (settings.autoStartRecording) {
-        startListening()
+        startListening().catch(() => { busyRef.current = false; setStatus('idle') })
       } else {
         // Wait for user to tap play/mic to start recording
         pendingListenRef.current = () => startListening()
@@ -1363,7 +1367,12 @@ export function PracticeScreen() {
         // Speak parenthetical if enabled and present
         await speakParenthetical(currentLine.parenthetical, currentLine.audio_url_parenthetical)
       }
-      await playAudio(currentLine.audio_url)
+      // Play pre-generated audio, fall back to live TTS if missing
+      if (currentLine.audio_url) {
+        await playAudio(currentLine.audio_url)
+      } else {
+        await playSegmentLiveTTS(currentLine.content)
+      }
       setStatus('idle')
       busyRef.current = false
       if (isPlayingRef.current) next()
@@ -1506,6 +1515,7 @@ export function PracticeScreen() {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
         listeningRef.current = false
+        busyRef.current = false
         return
       }
     }
@@ -1519,7 +1529,7 @@ export function PracticeScreen() {
       if (!listeningRef.current) { clearInterval(silenceTimerRef.current!); return; }
       const silenceMs = Date.now() - lastSpeechRef.current;
       const hasTranscript = transcriptRef.current.trim()
-      
+
       if (silenceMs > 5000 && !hasTranscript) {
         clearInterval(silenceTimerRef.current!);
         handleBuildTimeout();
@@ -1609,6 +1619,7 @@ export function PracticeScreen() {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
         listeningRef.current = false
+        busyRef.current = false
         return
       }
     }
@@ -1616,7 +1627,7 @@ export function PracticeScreen() {
     // Start recording user audio for playback
     deepgram.startRecording()
 
-    // Silence timer - evaluate after 1.0s of silence
+    // Silence timer - evaluate after silence, with emergency no-speech timeout
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
       if (!listeningRef.current) {
@@ -1624,9 +1635,18 @@ export function PracticeScreen() {
         return
       }
       const silenceMs = Date.now() - lastSpeechRef.current
-      if (silenceMs > settings.silenceDuration && transcriptRef.current.trim()) {
+      const hasTranscript = transcriptRef.current.trim()
+      if (silenceMs > settings.silenceDuration && hasTranscript) {
         console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
         finishListeningRef.current()
+      } else if (silenceMs > 15000 && !hasTranscript) {
+        // Emergency: 15s with no speech at all — STT may be dead, reset gracefully
+        console.warn('[STT] 15s no-speech timeout — resetting')
+        if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
+        listeningRef.current = false
+        deepgram.pauseListening()
+        setStatus('idle')
+        busyRef.current = false
       }
     }, 250)
   }
@@ -1661,11 +1681,12 @@ export function PracticeScreen() {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
         listeningRef.current = false
+        busyRef.current = false
         return
       }
     }
 
-    // Silence timer - evaluate after 1.0s of silence
+    // Silence timer - evaluate after silence, with emergency no-speech timeout
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
       if (!listeningRef.current) {
@@ -1673,9 +1694,17 @@ export function PracticeScreen() {
         return
       }
       const silenceMs = Date.now() - lastSpeechRef.current
-      if (silenceMs > settings.silenceDuration && transcriptRef.current.trim()) {
+      const hasTranscript = transcriptRef.current.trim()
+      if (silenceMs > settings.silenceDuration && hasTranscript) {
         console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
         finishListeningRef.current()
+      } else if (silenceMs > 15000 && !hasTranscript) {
+        console.warn('[STT] 15s no-speech timeout — resetting')
+        if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
+        listeningRef.current = false
+        deepgram.pauseListening()
+        setStatus('idle')
+        busyRef.current = false
       }
     }, 250)
   }
