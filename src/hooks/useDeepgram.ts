@@ -303,7 +303,8 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
 
     console.log('[Deepgram] Reconnecting with new keyterms:', keyterms.slice(0, 5).join(', '), '...')
 
-    // Close old socket
+    // Close old socket — null out handlers first to prevent onclose from
+    // firing onDisconnect (which would trigger auto-reconnect and race with us)
     if (processorRef.current) {
       processorRef.current.disconnect()
       processorRef.current = null
@@ -313,6 +314,9 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
       audioContextRef.current = null
     }
     if (socketRef.current) {
+      socketRef.current.onclose = null
+      socketRef.current.onerror = null
+      socketRef.current.onmessage = null
       socketRef.current.close()
       socketRef.current = null
     }

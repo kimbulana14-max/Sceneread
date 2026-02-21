@@ -395,7 +395,7 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
           <motion.button
             whileTap={{ scale: 0.98 }}
             onClick={() => handleContinuePractice(lastScript)}
-            className="w-full p-4 bg-gradient-to-r from-accent/10 to-accent/5 rounded-xl border border-accent/20 hover:border-accent/40 transition-all text-left"
+            className="w-full p-4 bg-gradient-to-r from-accent/10 to-accent/5 rounded-xl transition-all text-left"
           >
             {(() => {
               const state = getScriptState(lastScript.id)

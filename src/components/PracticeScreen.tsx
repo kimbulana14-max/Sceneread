@@ -1493,11 +1493,10 @@ export function PracticeScreen() {
     setStatus('listening')
     if (settings.playYourTurnCue) playYourTurn()
 
-    // Update Deepgram keyterms to boost expected words
-    deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
+    // Update Deepgram keyterms to boost expected words (await reconnect!)
+    await deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
 
-    // CRITICAL: Start sending audio to Deepgram (billing starts here)
-    // If connection died, reconnect first
+    // Start sending audio to Deepgram — if connection died, reconnect first
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
@@ -1597,11 +1596,10 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
-    // Update Deepgram keyterms to boost expected words
-    deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
+    // Update Deepgram keyterms to boost expected words (await reconnect!)
+    await deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
 
-    // CRITICAL: Start sending audio to Deepgram (billing starts here)
-    // If connection died, reconnect first
+    // Start sending audio to Deepgram — if connection died, reconnect first
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
@@ -1650,11 +1648,10 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
-    // Update Deepgram keyterms to boost expected words
-    deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
+    // Update Deepgram keyterms to boost expected words (await reconnect!)
+    await deepgram.updateKeyterms(getKeyterms(expectedLineRef.current))
 
-    // CRITICAL: Start sending audio to Deepgram (billing starts here)
-    // If connection died, reconnect first
+    // Start sending audio to Deepgram — if connection died, reconnect first
     let started = deepgram.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
@@ -2275,7 +2272,7 @@ export function PracticeScreen() {
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.2}
           onDragEnd={handleSceneSwipe}
-          className="border-b border-border/20 cursor-grab active:cursor-grabbing select-none bg-bg-surface/30"
+          className="cursor-grab active:cursor-grabbing select-none bg-bg-surface/30"
         >
           <div className="px-4 py-3">
             {/* Episode info - compact row */}
@@ -2780,7 +2777,7 @@ export function PracticeScreen() {
               >
                 <div 
                   onClick={() => canInteract && goTo(i, true)}
-                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/15 text-ai ring-1 ring-ai/30' : 'bg-overlay-5 text-text-muted'}`}
+                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai/20 text-ai' : 'bg-overlay-5 text-text-muted'}`}
                 >
                   {line.content}
                   <button
@@ -2827,7 +2824,7 @@ export function PracticeScreen() {
               key={line.id} 
               ref={(el) => { if (el) lineRefs.current.set(i, el) }}
               animate={{ scale: isCurrent ? 1.01 : 1 }} 
-              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/10 ring-1 ring-accent/30' : 'bg-ai/10 ring-1 ring-ai/30') : isDone ? 'bg-success/5' : ''} ${isSelected ? 'ring-2 ring-ai/30' : ''}`}
+              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/15' : 'bg-ai/15') : isDone ? 'bg-success/5' : ''} ${isSelected ? 'bg-ai/10' : ''}`}
             >
               <div className="p-3" onClick={handleLineTap}>
                 <div className="flex items-center gap-2 mb-1">
