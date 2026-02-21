@@ -242,7 +242,7 @@ export function PracticeScreen() {
   // OpenAI Realtime uses updatePrompt() per-line — no keyterms needed
 
   // OpenAI Realtime - STT with prompt-based word biasing
-  const deepgram = useOpenAIRealtime({
+  const stt = useOpenAIRealtime({
     onPartialTranscript: (data) => {
       if (!listeningRef.current) return
       // Ignore non-speech events
@@ -361,7 +361,7 @@ export function PracticeScreen() {
   useEffect(() => {
     reconnectRef.current = async () => {
       console.log('[STT] Attempting reconnect...')
-      const success = await deepgram.startSession()
+      const success = await stt.startSession()
       if (success) {
         console.log('[STT] Reconnected successfully')
         setMicReady(true)
@@ -369,7 +369,7 @@ export function PracticeScreen() {
         console.error('[STT] Failed to reconnect')
       }
     }
-  }, [deepgram])
+  }, [stt])
   
   // Load saved practice state when script changes
   useEffect(() => {
@@ -504,7 +504,7 @@ export function PracticeScreen() {
   useEffect(() => { 
     if (!isPlaying) {
       console.log('[STT] Paused - stopping audio send')
-      deepgram.pauseListening()
+      stt.pauseListening()
       // Don't disconnect - keep connection warm for quick resume
       // Full cleanup happens after 30s of inactivity or on unmount
     }
@@ -525,8 +525,8 @@ export function PracticeScreen() {
 
   const cleanup = () => {
     cancelAnimationFrame(frameRef.current)
-    deepgram.pauseListening() // Stop audio first
-    deepgram.stopSession()    // Then disconnect
+    stt.pauseListening() // Stop audio first
+    stt.stopSession()    // Then disconnect
     if (countdownRef.current) clearInterval(countdownRef.current)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
@@ -539,7 +539,7 @@ export function PracticeScreen() {
       console.log('[STT] Starting session (audio paused until listening)...')
 
       // OpenAI Realtime - connect (no params needed, prompt set per-line via updatePrompt)
-      const success = await deepgram.startSession()
+      const success = await stt.startSession()
       if (!success) {
         throw new Error('Failed to connect')
       }
@@ -594,7 +594,7 @@ export function PracticeScreen() {
     busyRef.current = false
     
     // CRITICAL: Stop sending audio to STT immediately (billing stops)
-    deepgram.pauseListening()
+    stt.pauseListening()
     
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     setStatus('idle')
@@ -1167,7 +1167,7 @@ export function PracticeScreen() {
     busyRef.current = false
     
     // CRITICAL: Stop sending audio to STT immediately (billing stops)
-    deepgram.pauseListening()
+    stt.pauseListening()
     
     if (silenceTimerRef.current) {
       clearInterval(silenceTimerRef.current)
@@ -1499,14 +1499,14 @@ export function PracticeScreen() {
     setStatus('connecting')
 
     // Update prompt to bias toward expected words (instant, no reconnect)
-    deepgram.updatePrompt(expectedLineRef.current)
+    stt.updatePrompt(expectedLineRef.current)
 
     // Start sending audio — if connection died, reconnect first
-    let started = deepgram.startListening()
+    let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await deepgram.startSession()
-      started = deepgram.startListening()
+      await stt.startSession()
+      started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
@@ -1521,7 +1521,7 @@ export function PracticeScreen() {
     setStatus('listening')
 
     // Start recording user audio for playback
-    deepgram.startRecording()
+    stt.startRecording()
 
     // Timeout if no speech, emergency fallback
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
@@ -1548,7 +1548,7 @@ export function PracticeScreen() {
     listeningRef.current = false
     
     // CRITICAL: Stop sending audio to STT immediately (billing stops)
-    deepgram.pauseListening()
+    stt.pauseListening()
     
     playIncorrect()
     setTranscript(transcriptRef.current || '(timeout)')
@@ -1609,14 +1609,14 @@ export function PracticeScreen() {
     setStatus('connecting');
 
     // Update prompt to bias toward expected words (instant, no reconnect)
-    deepgram.updatePrompt(expectedLineRef.current)
+    stt.updatePrompt(expectedLineRef.current)
 
     // Start sending audio — if connection died, reconnect first
-    let started = deepgram.startListening()
+    let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await deepgram.startSession()
-      started = deepgram.startListening()
+      await stt.startSession()
+      started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
@@ -1631,7 +1631,7 @@ export function PracticeScreen() {
     setStatus('listening');
 
     // Start recording user audio for playback
-    deepgram.startRecording()
+    stt.startRecording()
 
     // Silence timer - coverage-aware: if user has only said part of the line, give more time
     // Actors pause mid-line (e.g. "wow. wow." [pause] "so do you")
@@ -1687,14 +1687,14 @@ export function PracticeScreen() {
     setStatus('listening');
 
     // Update prompt to bias toward expected words (instant, no reconnect)
-    deepgram.updatePrompt(expectedLineRef.current)
+    stt.updatePrompt(expectedLineRef.current)
 
     // Start sending audio — if connection died, reconnect first
-    let started = deepgram.startListening()
+    let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await deepgram.startSession()
-      started = deepgram.startListening()
+      await stt.startSession()
+      started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
         setStatus('idle')
@@ -1733,10 +1733,10 @@ export function PracticeScreen() {
     setShowWaitingNudge(false)
 
     // CRITICAL: Stop sending audio to STT immediately (billing stops)
-    deepgram.pauseListening()
+    stt.pauseListening()
 
     // Stop recording and store blob for playback
-    deepgram.stopRecording().then(blob => {
+    stt.stopRecording().then(blob => {
       if (blob && blob.size > 0) {
         lastRecordingRef.current = blob
         setHasRecording(true)
@@ -2081,7 +2081,7 @@ export function PracticeScreen() {
     setShowWaitingNudge(false)
 
     // CRITICAL: Stop sending audio to STT immediately (billing stops)
-    deepgram.pauseListening()
+    stt.pauseListening()
     
     if (silenceTimerRef.current) {
       clearInterval(silenceTimerRef.current)
@@ -3398,7 +3398,7 @@ export function PracticeScreen() {
             if (listeningRef.current) {
               listeningRef.current = false
               setShowWaitingNudge(false)
-              deepgram.pauseListening()
+              stt.pauseListening()
               if (silenceTimerRef.current) { clearInterval(silenceTimerRef.current); silenceTimerRef.current = null }
               if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null }
             }
