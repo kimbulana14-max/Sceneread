@@ -42,6 +42,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const currentTranscriptRef = useRef<string>('')
   const isConnectedRef = useRef(false) // Ref-based connection state (no stale closures)
+  const audioEnabledAtRef = useRef(0) // When audio sending was actually enabled (after settle)
 
   // CRITICAL: Controls whether audio is actually sent to OpenAI
   // When false, we're connected but not sending audio (no billing)
@@ -204,14 +205,34 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
               console.log('[OpenAI Realtime] Session created:', message.session?.id)
             }
             
+            // CRITICAL: Ignore transcripts that arrive too soon after audio enable.
+            // After buffer clear + settle, VAD may commit near-empty audio and Whisper
+            // hallucinates the prompt text. Real speech takes 2s+ to speak and transcribe.
+            const isTranscriptionEvent =
+              message.type === 'conversation.item.input_audio_transcription.delta' ||
+              message.type === 'transcription.delta' ||
+              message.type === 'conversation.item.input_audio_transcription.completed' ||
+              message.type === 'transcription.completed'
+
+            if (isTranscriptionEvent && audioEnabledAtRef.current > 0 &&
+                Date.now() - audioEnabledAtRef.current < 2000) {
+              // Discard phantom/hallucinated transcript from near-empty audio
+              if (message.type.includes('completed')) {
+                console.log('[OpenAI Realtime] Discarding phantom transcript:',
+                  (message.transcript || message.text || '').substring(0, 40) + '...')
+              }
+              currentTranscriptRef.current = ''
+              return // Don't forward to PracticeScreen
+            }
+
             // Handle transcription delta (partial)
-            if (message.type === 'conversation.item.input_audio_transcription.delta' || 
+            if (message.type === 'conversation.item.input_audio_transcription.delta' ||
                 message.type === 'transcription.delta') {
               const text = message.delta || message.text || ''
               currentTranscriptRef.current += text
               onPartialTranscript?.({ text: currentTranscriptRef.current, words: [] })
             }
-            
+
             // Handle transcription completed
             if (message.type === 'conversation.item.input_audio_transcription.completed' ||
                 message.type === 'transcription.completed') {
@@ -289,6 +310,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     setTimeout(() => {
       if (isConnectedRef.current) {
         sendingAudioRef.current = true
+        audioEnabledAtRef.current = Date.now()
         console.log('[OpenAI Realtime] Audio sending now enabled (after settle)')
       }
     }, 300)
