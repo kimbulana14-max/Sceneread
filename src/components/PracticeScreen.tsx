@@ -291,7 +291,8 @@ export function PracticeScreen() {
       if (!listeningRef.current) return
       // Ignore non-speech events
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
-      
+      // Reject stale results from previous listening session
+      if (Date.now() - listenSessionRef.current < 500) return
       console.log('[STT] Partial:', data.text)
 
       // Track cue pickup speed: first speech after AI finished
@@ -325,7 +326,12 @@ export function PracticeScreen() {
       if (!listeningRef.current) return
       // Ignore non-speech commits
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
-      
+      // Reject stale results from previous listening session — Deepgram may send
+      // delayed finals after we pause+restart. Real speech takes 500ms+ to commit.
+      if (Date.now() - listenSessionRef.current < 500) {
+        console.log('[STT] Discarding stale committed result:', data.text)
+        return
+      }
       console.log('[STT] Committed:', data.text)
       // Accumulate committed transcripts
       committedTextRef.current = committedTextRef.current 
