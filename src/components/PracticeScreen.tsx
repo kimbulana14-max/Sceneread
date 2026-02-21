@@ -1669,8 +1669,8 @@ export function PracticeScreen() {
     // Start recording user audio for playback
     deepgram.startRecording()
 
-    // Silence timer - evaluate after silence when user has spoken
-    // No emergency timeout — actors pause naturally. Show gentle nudge instead.
+    // Silence timer - coverage-aware: if user has only said part of the line, give more time
+    // Actors pause mid-line (e.g. "wow. wow." [pause] "so do you")
     setShowWaitingNudge(false)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
@@ -1681,12 +1681,21 @@ export function PracticeScreen() {
       }
       const silenceMs = Date.now() - lastSpeechRef.current
       const hasTranscript = transcriptRef.current.trim()
-      if (silenceMs > settings.silenceDuration && hasTranscript) {
-        console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
-        setShowWaitingNudge(false)
-        finishListeningRef.current()
-      } else if (silenceMs > 10000 && !hasTranscript) {
-        // Gentle nudge after 10s — don't evaluate, just show hint
+      if (hasTranscript) {
+        // How much of the line has the user said?
+        const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
+        const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
+        const coverage = spokenWords / Math.max(1, expectedWords)
+        // If user said most of the line (>= 70%), use normal silence duration
+        // If user only said part of the line, give them 5s to continue
+        const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        if (silenceMs > timeout) {
+          console.log('[Silence]', timeout, 'ms timeout (coverage:', Math.round(coverage * 100) + '%) - evaluating')
+          setShowWaitingNudge(false)
+          finishListeningRef.current()
+        }
+      } else if (silenceMs > 10000) {
+        // Gentle nudge after 10s with no speech — don't evaluate, just show hint
         setShowWaitingNudge(true)
       }
     }, 250)
@@ -1727,7 +1736,7 @@ export function PracticeScreen() {
       }
     }
 
-    // Silence timer - evaluate after silence, with emergency no-speech timeout
+    // Silence timer - coverage-aware (same as practice mode)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
       if (!listeningRef.current) {
@@ -1736,12 +1745,15 @@ export function PracticeScreen() {
       }
       const silenceMs = Date.now() - lastSpeechRef.current
       const hasTranscript = transcriptRef.current.trim()
-      if (silenceMs > settings.silenceDuration && hasTranscript) {
-        console.log('[Silence]', settings.silenceDuration, 'ms timeout - evaluating transcript')
-        finishListeningRef.current()
-      } else if (silenceMs > 15000 && !hasTranscript) {
-        // Emergency: 15s with no speech — evaluate as empty (triggers 'wrong' flow with retry)
-        console.warn('[STT] 15s no-speech timeout — evaluating empty')
+      if (hasTranscript) {
+        const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
+        const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
+        const coverage = spokenWords / Math.max(1, expectedWords)
+        const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        if (silenceMs > timeout) {
+          finishListeningRef.current()
+        }
+      } else if (silenceMs > 15000) {
         finishListeningRef.current()
       }
     }, 250)
