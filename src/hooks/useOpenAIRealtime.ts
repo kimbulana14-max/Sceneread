@@ -127,7 +127,12 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     }
     
     source.connect(processor)
-    processor.connect(audioContext.destination)
+    // Connect through a zero-gain node so the processor fires (Web Audio API requirement)
+    // but no mic audio leaks to speakers (also avoids Windows audio ducking)
+    const silentGain = audioContext.createGain()
+    silentGain.gain.value = 0
+    processor.connect(silentGain)
+    silentGain.connect(audioContext.destination)
   }, [onAudioLevel])
 
   const startSession = useCallback(async () => {

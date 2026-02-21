@@ -1198,11 +1198,10 @@ export function PracticeScreen() {
     const isNarrator = currentLine.line_type === 'action' || currentLine.line_type === 'transition'
     console.log('[Play] is_user_line:', currentLine.is_user_line, 'learningMode:', learningMode)
 
-    // Pre-reconnect STT session in background so it's ready when recording starts
-    if (learningMode !== 'listen' && !deepgram.checkConnected()) {
-      console.log('[Play] Pre-reconnecting STT session in background...')
-      deepgram.startSession().catch(() => {})
-    }
+    // NOTE: We intentionally do NOT pre-connect the mic here.
+    // Activating getUserMedia() during TTS playback triggers Windows audio ducking
+    // (Communications Activity reduces other sounds by 80%). Instead, we connect
+    // when the user actually needs to speak — the "connecting" status handles the gap.
     
     // Repeat mode: Progressive build for user lines
     if (learningMode === 'repeat') {
