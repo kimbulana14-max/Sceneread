@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useSettings } from '@/store'
 
 interface WelcomeSplashProps {
@@ -38,13 +38,17 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
       duration: Math.random() * 3 + 2,
     })), [])
 
+  // Use ref to avoid effect re-running when onComplete identity changes
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
+
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('reveal'), 400)
     const t2 = setTimeout(() => setPhase('greeting'), 1000)
     const t3 = setTimeout(() => setPhase('exit'), 2400)
-    const t4 = setTimeout(() => onComplete(), 3000)
+    const t4 = setTimeout(() => onCompleteRef.current(), 3000)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
-  }, [onComplete])
+  }, [])
 
   const accentColor = isLight ? '#B87333' : '#E11D48'
   const accentGlow = isLight ? 'rgba(184,115,51,0.4)' : 'rgba(225,29,72,0.4)'
