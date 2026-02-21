@@ -272,6 +272,14 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     }
     console.log('[OpenAI Realtime] START listening - audio sending enabled')
     currentTranscriptRef.current = ''
+
+    // CRITICAL: Clear stale audio from previous turns before starting new listen
+    // Without this, leftover audio from the previous line gets transcribed as
+    // phantom text (e.g., previous line bleeding into current line's transcript)
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }))
+    }
+
     sendingAudioRef.current = true
     setIsListening(true)
     return true
@@ -304,6 +312,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
           input: {
             transcription: {
               model: 'gpt-4o-transcribe',
+              language: 'en',
               prompt,
             },
           },
