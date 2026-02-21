@@ -40,8 +40,8 @@
   --bg-surface: #f0ece4;
   --bg-surface-hover: #e8e2d9;
   --bg-subtle: #e8e2d9;
-  --border: #e8e2d9;
-  --border-hover: #d4ccc0;
+  --border: rgba(0,0,0,0.06);
+  --border-hover: rgba(0,0,0,0.10);
   --text: #1a1a1a;
   --text-secondary: #555555;
   --text-muted: #999999;

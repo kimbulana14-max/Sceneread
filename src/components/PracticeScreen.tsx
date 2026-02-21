@@ -600,7 +600,7 @@ export function PracticeScreen() {
     setFullLineCompletions(0)
     setShowStillThere(false)
     setCurrentLineIndex(index)
-    if (play) setTimeout(() => setIsPlaying(true), 50)
+    if (play) setTimeout(() => setIsPlaying(true), 10)
   }
   
   // ============ NEW MODE HELPERS ============
@@ -2707,7 +2707,7 @@ export function PracticeScreen() {
       </AnimatePresence>
 
       {/* Progress bar for current scene */}
-      <ProgressBar value={playableLines.length > 0 ? ((currentLineIndex + 1) / playableLines.length) * 100 : 0} color="var(--accent)" height={2} />
+      <ProgressBar value={playableLines.length > 0 ? ((currentLineIndex + 1) / playableLines.length) * 100 : 0} color="var(--ai)" height={2} />
 
       {/* Lines */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2" onClick={() => setSelectedLineId(null)}>
@@ -2778,7 +2778,7 @@ export function PracticeScreen() {
               key={line.id} 
               ref={(el) => { if (el) lineRefs.current.set(i, el) }}
               animate={{ scale: isCurrent ? 1.01 : 1 }} 
-              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/10 ring-1 ring-accent/30' : 'bg-ai/10 ring-1 ring-ai/30') : isDone ? 'bg-success/5' : ''} ${isSelected ? 'ring-2 ring-white/30' : ''}`}
+              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? (isUser ? 'bg-accent/10 ring-1 ring-accent/30' : 'bg-ai/10 ring-1 ring-ai/30') : isDone ? 'bg-success/5' : ''} ${isSelected ? 'ring-2 ring-ai/30' : ''}`}
             >
               <div className="p-3" onClick={handleLineTap}>
                 <div className="flex items-center gap-2 mb-1">
@@ -3004,12 +3004,12 @@ export function PracticeScreen() {
         <AnimatePresence>
           {status === 'listening' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div className="px-4 py-3 rounded-lg bg-error-muted border border-error-border">
+              <div className="px-4 py-3 rounded-lg bg-ai-muted border border-ai-border">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-error animate-pulse" />
-                  <span className="flex-1 text-sm text-error truncate">{transcript || 'Listening...'}</span>
+                  <span className="w-2 h-2 rounded-full bg-ai animate-pulse" />
+                  <span className="flex-1 text-sm text-ai truncate">{transcript || 'Listening...'}</span>
                   <div className="w-12 h-1.5 bg-black/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-error transition-all" style={{ width: `${audioLevel}%` }} />
+                    <div className="h-full bg-ai transition-all" style={{ width: `${audioLevel}%` }} />
                   </div>
                 </div>
               </div>
@@ -3189,7 +3189,7 @@ export function PracticeScreen() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="px-3 py-1.5 rounded-full bg-error/90 backdrop-blur text-white text-xs font-medium shadow-lg"
+              className="px-3 py-1.5 rounded-full bg-error backdrop-blur text-white text-xs font-medium shadow-lg"
             >
               {errorPopup}
             </motion.div>
@@ -3226,7 +3226,7 @@ export function PracticeScreen() {
         <div className="relative">
           {/* Subtle glow when listening or waiting for manual start */}
           {status === 'listening' && (
-            <div className="absolute -inset-1 rounded-full bg-error/20 blur-sm animate-pulse" />
+            <div className="absolute -inset-1 rounded-full bg-ai/20 blur-sm animate-pulse" />
           )}
           {pendingListenRef.current && status === 'idle' && (
             <div className="absolute -inset-1 rounded-full bg-accent/20 blur-sm animate-pulse" />
@@ -3235,7 +3235,7 @@ export function PracticeScreen() {
             onClick={handlePlayPause} 
             disabled={status === 'connecting'} 
             className={`relative w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-200 ${
-              status === 'listening' ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-lg shadow-red-500/30' : 
+              status === 'listening' ? 'bg-gradient-to-br from-ai to-ai/80 shadow-lg shadow-ai/30' :
               (isPlaying || status === 'ai' || status === 'narrator' || status === 'segment') ? 'bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg shadow-orange-500/20' :
               'bg-gradient-to-br from-accent to-accent/80 shadow-lg shadow-accent/20'
             }`}

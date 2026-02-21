@@ -34,7 +34,7 @@ export function TabBar() {
                 data-tutorial={`tab-${id}`}
                 className={`
                   flex flex-col items-center gap-1 px-3 py-2 transition-colors duration-200
-                  ${isActive ? 'text-text' : 'text-text-subtle hover:text-text-muted'}
+                  ${isActive ? 'text-ai' : 'text-text-subtle hover:text-text-muted'}
                 `}
               >
                 <Icon size={22} />
