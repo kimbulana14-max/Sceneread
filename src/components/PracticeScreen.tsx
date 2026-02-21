@@ -2997,7 +2997,7 @@ export function PracticeScreen() {
                           } else if (status === 'correct') {
                             colorClass = 'text-success'
                           } else if (isBuilt) {
-                            colorClass = 'text-accent underline decoration-accent/50 decoration-2 underline-offset-2'
+                            colorClass = 'text-success underline decoration-success/50 decoration-2 underline-offset-2'
                           }
                           
                           return (
