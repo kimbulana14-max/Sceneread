@@ -248,7 +248,7 @@ export function PracticeScreen() {
       // Ignore non-speech events
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
       // Reject stale/hallucinated results during settling period
-      if (Date.now() - listenSessionRef.current < 1500) return
+      if (Date.now() - listenSessionRef.current < 800) return
       console.log('[STT] Partial:', JSON.stringify(data.text), 'committed so far:', JSON.stringify(committedTextRef.current))
 
       // Track cue pickup speed: first speech after AI finished
@@ -285,7 +285,7 @@ export function PracticeScreen() {
       // Reject stale/hallucinated results — STT may send delayed finals after
       // pause+restart, or Whisper may hallucinate the prompt text from near-empty
       // audio. Real speech takes 1-2s+ to speak and commit.
-      if (Date.now() - listenSessionRef.current < 1500) {
+      if (Date.now() - listenSessionRef.current < 800) {
         console.log('[STT] Discarding early committed result (settling):', data.text)
         return
       }
@@ -784,16 +784,31 @@ export function PracticeScreen() {
         segments.push(words.slice(i, i + chunkSize).join(' '))
       }
     }
-    // Post-process: merge segments with fewer than 2 words into adjacent segments
-    // This prevents useless 1-word segments like "Goodbye." or "Thanks."
+    // Post-process: enforce max 8 words per segment (split long AI-generated segments)
+    const maxWords = 8
+    const splitLong: string[] = []
+    for (const seg of segments) {
+      const words = seg.trim().split(/\s+/).filter(w => w)
+      if (words.length > maxWords) {
+        // Split at roughly halfway, preferring comma/clause boundaries
+        for (let i = 0; i < words.length; i += maxWords) {
+          const chunk = words.slice(i, Math.min(i + maxWords, words.length))
+          if (chunk.length > 0) splitLong.push(chunk.join(' '))
+        }
+      } else {
+        splitLong.push(seg)
+      }
+    }
+    segments = splitLong
+    // Post-process: merge segments with fewer than 3 words into adjacent segments
     if (segments.length > 1) {
       const merged: string[] = []
       for (let i = 0; i < segments.length; i++) {
         const wordCount = segments[i].trim().split(/\s+/).filter(w => w).length
-        if (wordCount < 2 && merged.length > 0) {
+        if (wordCount < 3 && merged.length > 0) {
           // Merge short segment with previous
           merged[merged.length - 1] += ' ' + segments[i]
-        } else if (wordCount < 2 && i < segments.length - 1) {
+        } else if (wordCount < 3 && i < segments.length - 1) {
           // First segment is too short — prepend to next
           segments[i + 1] = segments[i] + ' ' + segments[i + 1]
         } else {
@@ -1525,13 +1540,17 @@ export function PracticeScreen() {
     stt.startRecording()
 
     // Timeout if no speech, emergency fallback
+    // Scale timeout with expected text length: longer lines take longer to speak
+    // ~500ms per word + 1s VAD commit delay + 2s buffer
+    const expectedWordCount = expectedText.split(/\s+/).filter(w => w.length > 0).length
+    const noTranscriptTimeout = Math.max(8000, expectedWordCount * 500 + 3000)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
     silenceTimerRef.current = setInterval(() => {
       if (!listeningRef.current) { clearInterval(silenceTimerRef.current!); return; }
       const silenceMs = Date.now() - lastSpeechRef.current;
       const hasTranscript = transcriptRef.current.trim()
 
-      if (silenceMs > 5000 && !hasTranscript) {
+      if (silenceMs > noTranscriptTimeout && !hasTranscript) {
         clearInterval(silenceTimerRef.current!);
         handleBuildTimeout();
       }

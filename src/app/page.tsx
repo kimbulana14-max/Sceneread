@@ -922,7 +922,7 @@ export default function Home() {
             />
           )}
         </AnimatePresence>
-        <div className="flex-1 overflow-hidden pb-20">
+        <div className="flex-1 overflow-y-auto pb-20">
           {renderScreen()}
         </div>
         <TabBar />

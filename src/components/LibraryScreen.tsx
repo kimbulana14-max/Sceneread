@@ -352,7 +352,7 @@ export function LibraryScreen() {
   }
 
   return (
-    <div className="pb-24 pt-safe">
+    <div className="h-full overflow-y-auto pb-24 pt-safe">
       <div className="px-5 pt-6 pb-4">
         <h1 className="font-display text-3xl font-normal text-text mb-1">Library</h1>
         <p className="text-text-muted text-sm">{scripts.length} scripts · {totalPages} pages</p>

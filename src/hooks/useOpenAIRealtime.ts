@@ -1,8 +1,14 @@
-// OpenAI Realtime API for transcription with filler word support
-// Uses whisper-1 with prompt to preserve fillers
-// 
-// COST OPTIMIZATION: Audio is only sent when isListening is true
-// This prevents billing during TTS playback, beeps, and transitions
+// OpenAI Realtime API for transcription with manual commit strategy
+//
+// ARCHITECTURE: Server VAD handles natural pauses, but we ALSO commit
+// audio manually every 3s. This gives us streaming-like transcripts
+// during long utterances instead of waiting for the user to stop speaking.
+//
+// Without manual commits, the VAD only commits after 700ms of silence,
+// meaning a 10-second line produces ZERO transcripts for 10+ seconds.
+//
+// COST OPTIMIZATION: Audio is only sent when isListening is true.
+// This prevents billing during TTS playback, beeps, and transitions.
 
 import { useState, useRef, useCallback } from 'react'
 
@@ -35,18 +41,22 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
 
   const [isConnected, setIsConnected] = useState(false)
   const [isListening, setIsListening] = useState(false)
-  
+
   const socketRef = useRef<WebSocket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const currentTranscriptRef = useRef<string>('')
-  const isConnectedRef = useRef(false) // Ref-based connection state (no stale closures)
-  const audioEnabledAtRef = useRef(0) // When audio sending was actually enabled (after settle)
+  const isConnectedRef = useRef(false)
+  const audioEnabledAtRef = useRef(0)
 
-  // CRITICAL: Controls whether audio is actually sent to OpenAI
-  // When false, we're connected but not sending audio (no billing)
+  // Controls whether audio is actually sent to OpenAI
   const sendingAudioRef = useRef(false)
+
+  // Manual commit: periodic commits for streaming-like transcription
+  const commitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Only commit when we've detected actual speech (prevents phantom hallucination from silence)
+  const hadSpeechSinceCommitRef = useRef(false)
 
   // Self-record playback: MediaRecorder captures mic audio alongside STT
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -56,6 +66,11 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     console.log('[OpenAI Realtime] Cleanup called')
     sendingAudioRef.current = false
     isConnectedRef.current = false
+    hadSpeechSinceCommitRef.current = false
+    if (commitIntervalRef.current) {
+      clearInterval(commitIntervalRef.current)
+      commitIntervalRef.current = null
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
       mediaRecorderRef.current = null
@@ -86,47 +101,53 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
     const audioContext = new AudioContext({ sampleRate: 24000 })
     audioContextRef.current = audioContext
     const source = audioContext.createMediaStreamSource(stream)
-    
+
     const processor = audioContext.createScriptProcessor(4096, 1, 1)
     processorRef.current = processor
-    
+
     processor.onaudioprocess = (e) => {
       const inputData = e.inputBuffer.getChannelData(0)
-      
-      // Calculate audio level (RMS) for visualization - always do this when listening
+
+      // Calculate RMS for visualization and speech detection
+      let sum = 0
+      for (let i = 0; i < inputData.length; i++) {
+        sum += inputData[i] * inputData[i]
+      }
+      const rms = Math.sqrt(sum / inputData.length)
+
+      // Audio level callback for visualization (only when listening)
       if (sendingAudioRef.current && onAudioLevel) {
-        let sum = 0
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i]
-        }
-        const rms = Math.sqrt(sum / inputData.length)
-        // Normalize to 0-1 range (typical speech RMS is 0.01-0.1)
         const level = Math.min(1, rms * 10)
         onAudioLevel(level)
       }
-      
-      // CRITICAL: Only send audio when actively listening
-      // This is the key cost optimization - no audio sent during TTS/beeps
+
+      // Only send audio when actively listening
       if (!sendingAudioRef.current) return
       if (socket.readyState !== WebSocket.OPEN) return
-      
+
+      // Track speech for manual commit gating
+      // RMS > 0.008 = above noise floor (speech is typically 0.01-0.1)
+      if (rms > 0.008) {
+        hadSpeechSinceCommitRef.current = true
+      }
+
       // Convert float32 to int16
       const pcm16 = new Int16Array(inputData.length)
       for (let i = 0; i < inputData.length; i++) {
         const s = Math.max(-1, Math.min(1, inputData[i]))
         pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
       }
-      
+
       // Convert to base64
       const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)))
-      
+
       // Send audio chunk
       socket.send(JSON.stringify({
         type: 'input_audio_buffer.append',
         audio: base64,
       }))
     }
-    
+
     source.connect(processor)
     // Connect through a zero-gain node so the processor fires (Web Audio API requirement)
     // but no mic audio leaks to speakers (also avoids Windows audio ducking)
@@ -142,10 +163,10 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
       console.log('[OpenAI Realtime] Already connected, reusing session')
       return true
     }
-    
+
     try {
       cleanup()
-      
+
       // Step 1: Get ephemeral token from our API
       console.log('[OpenAI Realtime] Fetching token...')
       const tokenRes = await fetch('/api/openai-realtime-token')
@@ -156,7 +177,7 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
       }
       const { client_secret } = await tokenRes.json()
       console.log('[OpenAI Realtime] Got token:', client_secret?.substring(0, 10) + '...')
-      
+
       // Step 2: Get microphone access
       console.log('[OpenAI Realtime] Requesting microphone...')
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -168,11 +189,11 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
         }
       })
       streamRef.current = stream
-      
+
       // Step 3: Connect to OpenAI Realtime WebSocket
       const wsUrl = 'wss://api.openai.com/v1/realtime?intent=transcription'
       console.log('[OpenAI Realtime] Connecting to WebSocket...')
-      
+
       return new Promise<boolean>((resolve) => {
         const socket = new WebSocket(wsUrl, [
           'realtime',
@@ -184,8 +205,6 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
           console.log('[OpenAI Realtime] Connected! (audio paused until startListening)')
           isConnectedRef.current = true
           setIsConnected(true)
-          // NOTE: isListening stays false until startListening() is called
-          // Audio capture starts but sendingAudioRef is false, so no billing yet
           onSessionStarted?.()
           startAudioCapture(socket, stream)
           resolve(true)
@@ -194,20 +213,26 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
         socket.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data)
-            
+
             // Only log important messages to reduce noise
             if (!['input_audio_buffer.speech_started', 'input_audio_buffer.speech_stopped'].includes(message.type)) {
               console.log('[OpenAI Realtime] Message:', message.type)
             }
-            
+
             // Handle session created
             if (message.type === 'session.created' || message.type === 'transcription_session.created') {
               console.log('[OpenAI Realtime] Session created:', message.session?.id)
             }
-            
-            // CRITICAL: Ignore transcripts that arrive too soon after audio enable.
-            // After buffer clear + settle, VAD may commit near-empty audio and Whisper
-            // hallucinates the prompt text. Real speech takes 2s+ to speak and transcribe.
+
+            // Reset speech tracking when buffer is committed (by VAD or manual)
+            // This prevents stale hadSpeech from triggering commits of near-empty buffers
+            if (message.type === 'input_audio_buffer.committed') {
+              hadSpeechSinceCommitRef.current = false
+            }
+
+            // Guard: reject transcripts arriving within 800ms of audio enable.
+            // Catches phantom hallucinations from VAD committing near-empty audio
+            // right after a buffer clear. Manual commits start at 3s so aren't affected.
             const isTranscriptionEvent =
               message.type === 'conversation.item.input_audio_transcription.delta' ||
               message.type === 'transcription.delta' ||
@@ -215,14 +240,13 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
               message.type === 'transcription.completed'
 
             if (isTranscriptionEvent && audioEnabledAtRef.current > 0 &&
-                Date.now() - audioEnabledAtRef.current < 2000) {
-              // Discard phantom/hallucinated transcript from near-empty audio
+                Date.now() - audioEnabledAtRef.current < 800) {
               if (message.type.includes('completed')) {
                 console.log('[OpenAI Realtime] Discarding phantom transcript:',
                   (message.transcript || message.text || '').substring(0, 40) + '...')
               }
               currentTranscriptRef.current = ''
-              return // Don't forward to PracticeScreen
+              return
             }
 
             // Handle transcription delta (partial)
@@ -241,13 +265,13 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
               currentTranscriptRef.current = ''
               onCommittedTranscript?.({ text, words: [] })
             }
-            
+
             // Handle errors
             if (message.type === 'error') {
               console.error('[OpenAI Realtime] Error:', message.error)
               onError?.(new Error(message.error?.message || 'Unknown error'))
             }
-            
+
           } catch (e) {
             console.error('[OpenAI Realtime] Failed to parse message:', e)
           }
@@ -263,11 +287,15 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
           console.log('[OpenAI Realtime] Connection closed:', event.code, event.reason)
           sendingAudioRef.current = false
           isConnectedRef.current = false
+          if (commitIntervalRef.current) {
+            clearInterval(commitIntervalRef.current)
+            commitIntervalRef.current = null
+          }
           setIsConnected(false)
           setIsListening(false)
           onDisconnect?.()
         }
-        
+
         // Timeout after 10 seconds
         setTimeout(() => {
           if (socket.readyState !== WebSocket.OPEN) {
@@ -291,39 +319,59 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
       console.warn('[OpenAI Realtime] Cannot start listening - not connected')
       return false
     }
-    console.log('[OpenAI Realtime] START listening - clearing buffer and settling')
+    console.log('[OpenAI Realtime] START listening')
     currentTranscriptRef.current = ''
+    hadSpeechSinceCommitRef.current = false
 
-    // CRITICAL: Clear stale audio from previous turns before starting new listen
-    // Without this, leftover audio from the previous line gets transcribed as
-    // phantom text (e.g., previous line bleeding into current line's transcript)
+    // Clear stale audio from previous turns
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }))
     }
 
-    // CRITICAL: Delay audio sending by 300ms to let the buffer clear propagate.
-    // Without this delay, audio frames sent between the clear request and server
-    // processing get committed by VAD, and Whisper hallucinates the prompt text
-    // from near-empty audio (e.g., transcribing silence as the expected line).
-    sendingAudioRef.current = false
-    setIsListening(true) // Report as listening for UI immediately
-    setTimeout(() => {
-      if (isConnectedRef.current) {
-        sendingAudioRef.current = true
-        audioEnabledAtRef.current = Date.now()
-        console.log('[OpenAI Realtime] Audio sending now enabled (after settle)')
-      }
-    }, 300)
+    // Enable audio sending immediately (no settle delay needed —
+    // manual commits are speech-gated, and the 800ms phantom guard
+    // catches any VAD phantom commits from near-empty buffer)
+    sendingAudioRef.current = true
+    audioEnabledAtRef.current = Date.now()
+    setIsListening(true)
 
+    // CRITICAL: Start periodic manual commits for streaming-like transcription.
+    // Without this, the VAD only commits after the user STOPS speaking (700ms silence).
+    // For a 10-second line, that means zero transcripts for 10+ seconds.
+    // With manual commits every 3s, we get intermediate transcripts throughout.
+    if (commitIntervalRef.current) clearInterval(commitIntervalRef.current)
+    commitIntervalRef.current = setInterval(() => {
+      if (sendingAudioRef.current && hadSpeechSinceCommitRef.current &&
+          socketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('[OpenAI Realtime] Manual commit (speech detected)')
+        socketRef.current.send(JSON.stringify({ type: 'input_audio_buffer.commit' }))
+        // hadSpeechSinceCommitRef is reset in onmessage when committed event arrives
+      }
+    }, 3000)
+
+    console.log('[OpenAI Realtime] Audio sending enabled + 3s commit interval started')
     return true
   }, [isConnected])
 
   // PAUSE listening - stops sending audio to OpenAI (billing stops)
   const pauseListening = useCallback(() => {
     console.log('[OpenAI Realtime] PAUSE listening - audio sending disabled')
+
+    // Commit any remaining audio that contains speech
+    if (hadSpeechSinceCommitRef.current && socketRef.current?.readyState === WebSocket.OPEN) {
+      console.log('[OpenAI Realtime] Final commit of remaining speech audio')
+      socketRef.current.send(JSON.stringify({ type: 'input_audio_buffer.commit' }))
+    }
+
     sendingAudioRef.current = false
+    hadSpeechSinceCommitRef.current = false
     setIsListening(false)
     currentTranscriptRef.current = ''
+
+    if (commitIntervalRef.current) {
+      clearInterval(commitIntervalRef.current)
+      commitIntervalRef.current = null
+    }
   }, [])
 
   // Update Whisper prompt to bias transcription toward expected line text
@@ -347,6 +395,12 @@ export function useOpenAIRealtime(options: UseOpenAIRealtimeOptions = {}) {
               model: 'gpt-4o-transcribe',
               language: 'en',
               prompt,
+            },
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.8,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 700,
             },
           },
         },
