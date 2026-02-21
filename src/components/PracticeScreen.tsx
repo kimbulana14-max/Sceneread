@@ -249,7 +249,7 @@ export function PracticeScreen() {
       if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
       // Reject stale results from previous listening session
       if (Date.now() - listenSessionRef.current < 500) return
-      console.log('[STT] Partial:', data.text)
+      console.log('[STT] Partial:', JSON.stringify(data.text), 'committed so far:', JSON.stringify(committedTextRef.current))
 
       // Track cue pickup speed: first speech after AI finished
       const isFirstSpeech = !transcriptRef.current.trim() && !committedTextRef.current.trim()
@@ -288,21 +288,23 @@ export function PracticeScreen() {
         console.log('[STT] Discarding stale committed result:', data.text)
         return
       }
-      console.log('[STT] Committed:', data.text)
+      console.log('[STT] Committed:', JSON.stringify(data.text), 'prev committed:', JSON.stringify(committedTextRef.current))
       // Accumulate committed transcripts
-      committedTextRef.current = committedTextRef.current 
-        ? committedTextRef.current + ' ' + data.text 
+      committedTextRef.current = committedTextRef.current
+        ? committedTextRef.current + ' ' + data.text
         : data.text
+      console.log('[STT] Full transcript now:', JSON.stringify(committedTextRef.current), 'expected:', JSON.stringify(expectedLineRef.current))
       setTranscript(committedTextRef.current)
       transcriptRef.current = committedTextRef.current
       lastSpeechRef.current = Date.now()
-      
+
       // Update word-locking state with committed text
       const newState = getLockedWordMatch(expectedLineRef.current, committedTextRef.current, lockedStateRef.current, characterNameSet)
       lockedStateRef.current = newState
+      console.log('[STT] Word lock: locked', newState.lockedCount, '/', expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length, 'hasError:', newState.hasError)
       setMatchedWordCount(newState.lockedCount)
       setHasError(newState.hasError)
-      
+
       // Check if user has said ALL words - auto-finish if 100% complete
       const expectedWordCount = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
       if (newState.lockedCount >= expectedWordCount && listeningRef.current) {
@@ -1651,8 +1653,12 @@ export function PracticeScreen() {
         // If user said most of the line (>= 70%), use normal silence duration
         // If user only said part of the line, give them 5s to continue
         const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        // Log every second so we can see the countdown
+        if (silenceMs > 1000 && Math.floor(silenceMs / 1000) !== Math.floor((silenceMs - 250) / 1000)) {
+          console.log('[Silence]', Math.round(silenceMs/1000) + 's /', (timeout/1000) + 's timeout | spoken:', spokenWords + '/' + expectedWords, '(' + Math.round(coverage * 100) + '%) |', JSON.stringify(hasTranscript))
+        }
         if (silenceMs > timeout) {
-          console.log('[Silence]', timeout, 'ms timeout (coverage:', Math.round(coverage * 100) + '%) - evaluating')
+          console.log('[Silence] FIRED at', Math.round(silenceMs) + 'ms (timeout:', timeout + 'ms, coverage:', Math.round(coverage * 100) + '%) - evaluating')
           setShowWaitingNudge(false)
           finishListeningRef.current()
         }
@@ -1758,7 +1764,7 @@ export function PracticeScreen() {
     const segs = segmentsRef.current
     const segIdx = currentSegmentIndexRef.current
 
-    console.log('[finishListening] spoken:', spoken, 'expected:', expectedLineRef.current, 'segIdx:', segIdx, 'segs.length:', segs.length)
+    console.log('[finishListening] spoken:', JSON.stringify(spoken), 'expected:', JSON.stringify(expectedLineRef.current), 'committed:', JSON.stringify(committedTextRef.current), 'segIdx:', segIdx, 'segs.length:', segs.length)
     
     if (!spoken || !currentLine) {
       playIncorrect()
