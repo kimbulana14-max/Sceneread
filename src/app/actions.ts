@@ -65,7 +65,7 @@ export async function signUp(email: string, password: string, fullName: string):
     // Create/update profile with full name
     await supabase
       .from('profiles')
-      .upsert({ id: data.user.id, full_name: fullName, email: data.user.email })
+      .upsert({ id: data.user.id, full_name: fullName })
 
     return { 
       success: true, 
