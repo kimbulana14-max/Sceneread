@@ -2162,54 +2162,48 @@ export function PracticeScreen() {
     })
   }
   
-  const handlePlayPause = async () => {
-    // Unlock audio on user interaction (critical for mobile)
-    await audioManager.unlock()
+  const handlePlayPause = () => {
+    // Fire-and-forget — NEVER await, .play() can hang forever on iOS
+    audioManager.unlockSync()
 
-    // Prime the actual <audio> element within this user gesture so iOS
-    // allows programmatic .play() calls later (autoplay per-element policy).
+    // Prime <audio> element for iOS (non-blocking)
     if (audioRef.current) {
-      audioRef.current.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
-      try { await audioRef.current.play() } catch {}
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      audioRef.current.src = ''
+      const el = audioRef.current
+      el.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      const p = el.play()
+      if (p) p.then(() => { el.pause(); el.currentTime = 0 }).catch(() => {})
     }
 
-    // If anything is happening, stop it immediately
+    // State changes IMMEDIATELY — never gated behind audio ops
     if (isPlaying || status !== 'idle') {
       stopPlayback()
       stopListening()
       pendingListenRef.current = null
     } else if (pendingListenRef.current) {
-      // User manually starting recording (autoStartRecording off)
       const pendingFn = pendingListenRef.current
       pendingListenRef.current = null
       setIsPlaying(true)
       pendingFn()
     } else {
-      // Clear "still there" prompt when manually pressing play
       setShowStillThere(false)
       setConsecutiveTimeouts(0)
       setIsPlaying(true)
     }
   }
-  
-  const handleModeChange = async (mode: LearningMode) => {
-    // Unlock audio on user interaction (critical for mobile)
-    await audioManager.unlock()
 
-    // Prime <audio> element for iOS (same as handlePlayPause)
+  const handleModeChange = (mode: LearningMode) => {
+    // Fire-and-forget — NEVER await on iOS
+    audioManager.unlockSync()
+
     if (audioRef.current) {
-      audioRef.current.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
-      try { await audioRef.current.play() } catch {}
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      audioRef.current.src = ''
+      const el = audioRef.current
+      el.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      const p = el.play()
+      if (p) p.then(() => { el.pause(); el.currentTime = 0 }).catch(() => {})
     }
 
     fullReset()
-    setLearningMode(mode) 
+    setLearningMode(mode)
     setCurrentLineIndex(0)
   }
 
@@ -2316,7 +2310,7 @@ export function PracticeScreen() {
 
   return (
     <div className="h-full flex flex-col bg-bg practice-screen">
-      <audio ref={audioRef} preload="auto" />
+      <audio ref={audioRef} preload="auto" playsInline />
       
       {/* Minimal Header */}
       <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b border-border/30">

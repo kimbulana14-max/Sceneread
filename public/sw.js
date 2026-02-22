@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sceneread-v2';
+const CACHE_NAME = 'sceneread-v3';
 
 // Only cache static assets, NOT the main page
 const PRECACHE_ASSETS = [
