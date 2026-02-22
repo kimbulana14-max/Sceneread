@@ -2214,42 +2214,6 @@ export function PracticeScreen() {
     setEditingLineId(null)
   }
 
-  const handleEditLineSplit = async (lineId: string, beforeText: string, afterText: string) => {
-    const line = lines.find(l => l.id === lineId)
-    if (!line) return
-    // Guard: don't split if either side is empty — just save what we have
-    if (!beforeText.trim() || !afterText.trim()) {
-      const keepText = (beforeText + afterText).trim()
-      if (keepText) await handleEditLineSave(lineId, keepText)
-      return
-    }
-    try {
-      // Update current line with text before split
-      await updateLine(lineId, { content: beforeText.trim() })
-      // Insert new line after
-      const newLine = await addLine({
-        script_id: line.script_id,
-        scene_id: line.scene_id,
-        character_name: line.character_name,
-        content: afterText.trim(),
-        is_user_line: line.is_user_line,
-        line_type: line.line_type,
-        emotion: line.emotion || 'neutral',
-        sort_order: line.sort_order + 0.5,
-      })
-      const updatedLines = lines.map(l => l.id === lineId ? { ...l, content: beforeText.trim() } : l)
-      if (newLine) {
-        useStore.getState().setLines([...updatedLines, newLine].sort((a, b) => a.sort_order - b.sort_order))
-      } else {
-        useStore.getState().setLines(updatedLines)
-      }
-    } catch (e) {
-      console.error('Failed to split line:', e)
-    }
-    setEditingLineId(null)
-    setEditingContent('')
-  }
-
   const handleEditLineDelete = async (lineId: string) => {
     const ok = await deleteLine(lineId)
     if (ok) {
@@ -3051,16 +3015,9 @@ export function PracticeScreen() {
                     onChange={(e) => setEditingContent(e.target.value)}
                     onBlur={() => handleEditLineSave(line.id, editingContent)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const ta = e.target as HTMLTextAreaElement
-                        const pos = ta.selectionStart
-                        const before = editingContent.slice(0, pos)
-                        if (before.endsWith('\n')) {
-                          e.preventDefault()
-                          const textBefore = before.slice(0, -1)
-                          const textAfter = editingContent.slice(pos)
-                          handleEditLineSplit(line.id, textBefore, textAfter)
-                        }
+                      if (e.key === 'Escape') {
+                        setEditingLineId(null)
+                        setEditingContent('')
                       }
                     }}
                     className="w-full bg-transparent text-center outline-none resize-none not-italic text-text border border-accent/40 focus:border-accent rounded p-1"
@@ -3204,16 +3161,9 @@ export function PracticeScreen() {
                     onChange={(e) => setEditingContent(e.target.value)}
                     onBlur={() => handleEditLineSave(line.id, editingContent)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const ta = e.target as HTMLTextAreaElement
-                        const pos = ta.selectionStart
-                        const before = editingContent.slice(0, pos)
-                        if (before.endsWith('\n')) {
-                          e.preventDefault()
-                          const textBefore = before.slice(0, -1)
-                          const textAfter = editingContent.slice(pos)
-                          handleEditLineSplit(line.id, textBefore, textAfter)
-                        }
+                      if (e.key === 'Escape') {
+                        setEditingLineId(null)
+                        setEditingContent('')
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
