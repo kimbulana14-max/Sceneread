@@ -62,11 +62,10 @@ export async function signUp(email: string, password: string, fullName: string):
 
   if (data.user && data.session) {
     // Immediate signup (no email confirmation)
-    // Update profile with full name
+    // Create/update profile with full name
     await supabase
       .from('profiles')
-      .update({ full_name: fullName })
-      .eq('id', data.user.id)
+      .upsert({ id: data.user.id, full_name: fullName, email: data.user.email })
 
     return { 
       success: true, 
