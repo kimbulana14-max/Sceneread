@@ -209,9 +209,6 @@ export function PracticeScreen() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
-  const [swipedLineId, setSwipedLineId] = useState<string | null>(null)
-  const [draggedLineId, setDraggedLineId] = useState<string | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   
   // New mode states
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -2198,9 +2195,6 @@ export function PracticeScreen() {
       setIsEditMode(false)
       setEditingLineId(null)
       setEditingContent('')
-      setSwipedLineId(null)
-      setDraggedLineId(null)
-      setDragOverIndex(null)
     }
   }
 
@@ -2223,6 +2217,12 @@ export function PracticeScreen() {
   const handleEditLineSplit = async (lineId: string, beforeText: string, afterText: string) => {
     const line = lines.find(l => l.id === lineId)
     if (!line) return
+    // Guard: don't split if either side is empty — just save what we have
+    if (!beforeText.trim() || !afterText.trim()) {
+      const keepText = (beforeText + afterText).trim()
+      if (keepText) await handleEditLineSave(lineId, keepText)
+      return
+    }
     try {
       // Update current line with text before split
       await updateLine(lineId, { content: beforeText.trim() })
@@ -2256,39 +2256,37 @@ export function PracticeScreen() {
       useStore.getState().setLines(lines.filter(l => l.id !== lineId))
       if (currentLineIndex >= sceneLines.length - 1) setCurrentLineIndex(Math.max(0, currentLineIndex - 1))
     }
-    setSwipedLineId(null)
   }
 
-  const handleReorder = async (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return
-    const reordered = [...playableLines]
-    const [moved] = reordered.splice(fromIndex, 1)
-    reordered.splice(toIndex, 0, moved)
-
-    // Assign new sort_orders
-    const updates: { id: string; sort_order: number }[] = reordered.map((line, i) => ({
-      id: line.id,
-      sort_order: i,
-    }))
-
+  const handleMoveLineUp = async (lineIndex: number) => {
+    if (lineIndex <= 0) return
+    const lineA = playableLines[lineIndex]
+    const lineB = playableLines[lineIndex - 1]
+    // Swap sort_orders
+    const sortA = lineA.sort_order
+    const sortB = lineB.sort_order
     // Optimistic update
     const updatedLines = lines.map(l => {
-      const upd = updates.find(u => u.id === l.id)
-      return upd ? { ...l, sort_order: upd.sort_order } : l
+      if (l.id === lineA.id) return { ...l, sort_order: sortB }
+      if (l.id === lineB.id) return { ...l, sort_order: sortA }
+      return l
     })
     useStore.getState().setLines(updatedLines.sort((a, b) => a.sort_order - b.sort_order))
-
-    // Persist to Supabase
+    // Persist
     const headers = await getAuthHeaders()
-    for (const upd of updates) {
-      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${upd.id}`, {
-        method: 'PATCH',
-        headers: { ...headers, 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ sort_order: upd.sort_order }),
-      }).catch(err => console.error('Failed to update sort_order:', err))
-    }
-    setDraggedLineId(null)
-    setDragOverIndex(null)
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${lineA.id}`, {
+      method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ sort_order: sortB }),
+    }).catch(err => console.error('Failed to move line:', err))
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${lineB.id}`, {
+      method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ sort_order: sortA }),
+    }).catch(err => console.error('Failed to move line:', err))
+  }
+
+  const handleMoveLineDown = async (lineIndex: number) => {
+    if (lineIndex >= playableLines.length - 1) return
+    await handleMoveLineUp(lineIndex + 1)
   }
 
   const handlePlayPause = () => {
@@ -3032,7 +3030,7 @@ export function PracticeScreen() {
                         }
                       }
                     }}
-                    className="w-full bg-transparent text-center outline-none resize-none not-italic text-text"
+                    className="w-full bg-transparent text-center outline-none resize-none not-italic text-text border border-accent/40 focus:border-accent rounded p-1"
                     rows={Math.max(2, editingContent.split('\n').length)}
                   />
                 ) : (
@@ -3053,58 +3051,33 @@ export function PracticeScreen() {
             return (
               <div key={line.id} className="relative" ref={(el) => { if (el) lineRefs.current.set(i, el) }}>
                 {isEditMode ? (
-                  <div className="relative overflow-hidden">
-                    {/* Delete button behind */}
-                    {swipedLineId === line.id && (
+                  <div className="flex items-center gap-1">
+                    {/* Move up/down + delete buttons */}
+                    <div className="flex flex-col gap-0.5 flex-shrink-0">
                       <button
-                        onClick={() => handleEditLineDelete(line.id)}
-                        className="absolute right-0 top-0 bottom-0 w-20 bg-error flex items-center justify-center text-white rounded-r-lg z-0"
+                        onClick={() => handleMoveLineUp(i)}
+                        disabled={i === 0}
+                        className="p-1 rounded text-text-muted hover:text-text disabled:opacity-20 transition-opacity"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
                       </button>
-                    )}
-                    <motion.div
-                      drag="x"
-                      dragConstraints={{ left: -80, right: 0 }}
-                      dragElastic={0.1}
-                      onDragEnd={(_, info: PanInfo) => {
-                        if (info.offset.x < -40) {
-                          setSwipedLineId(line.id)
-                        } else {
-                          setSwipedLineId(null)
-                        }
-                      }}
-                      animate={{ x: swipedLineId === line.id ? -80 : 0 }}
-                      className="relative z-10 flex items-center gap-2"
+                      <button
+                        onClick={() => handleMoveLineDown(i)}
+                        disabled={i === playableLines.length - 1}
+                        className="p-1 rounded text-text-muted hover:text-text disabled:opacity-20 transition-opacity"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {narratorContent}
+                    </div>
+                    <button
+                      onClick={() => handleEditLineDelete(line.id)}
+                      className="flex-shrink-0 p-1.5 rounded-lg text-error/60 hover:text-error hover:bg-error/10 transition-colors"
                     >
-                      {/* Drag handle */}
-                      <div
-                        className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-text-subtle touch-none"
-                        draggable
-                        onDragStart={(e) => {
-                          setDraggedLineId(line.id)
-                          e.dataTransfer.effectAllowed = 'move'
-                        }}
-                        onDragEnd={() => {
-                          if (dragOverIndex !== null) {
-                            const fromIdx = playableLines.findIndex(l => l.id === line.id)
-                            handleReorder(fromIdx, dragOverIndex)
-                          }
-                          setDraggedLineId(null)
-                          setDragOverIndex(null)
-                        }}
-                      >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
-                      </div>
-                      <div
-                        className={`flex-1 ${dragOverIndex === i ? 'border-t-2 border-accent' : ''}`}
-                        onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i) }}
-                        onDragLeave={() => setDragOverIndex(null)}
-                        onDrop={(e) => { e.preventDefault() }}
-                      >
-                        {narratorContent}
-                      </div>
-                    </motion.div>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
                   </div>
                 ) : (
                   <motion.div
@@ -3209,7 +3182,7 @@ export function PracticeScreen() {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-bg-surface/50 text-text text-sm leading-relaxed p-2 rounded outline-none border border-accent/30 resize-none"
+                    className="w-full bg-transparent text-text text-sm leading-relaxed p-2 rounded outline-none border border-accent/40 focus:border-accent resize-none"
                     rows={Math.max(2, editingContent.split('\n').length)}
                   />
                 ) : isCurrent && isUser && (status === 'listening' || status === 'segment' || status === 'correct' || status === 'wrong' || (learningMode === 'repeat' && segments.length > 0)) ? (
@@ -3353,58 +3326,33 @@ export function PracticeScreen() {
           return (
             <div key={line.id} className="relative" ref={(el) => { if (el) lineRefs.current.set(i, el) }}>
               {isEditMode ? (
-                <div className="relative overflow-hidden">
-                  {/* Delete button behind */}
-                  {swipedLineId === line.id && (
+                <div className="flex items-center gap-1">
+                  {/* Move up/down buttons */}
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
                     <button
-                      onClick={() => handleEditLineDelete(line.id)}
-                      className="absolute right-0 top-0 bottom-0 w-20 bg-error flex items-center justify-center text-white rounded-r-lg z-0"
+                      onClick={() => handleMoveLineUp(i)}
+                      disabled={i === 0}
+                      className="p-1 rounded text-text-muted hover:text-text disabled:opacity-20 transition-opacity"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
                     </button>
-                  )}
-                  <motion.div
-                    drag="x"
-                    dragConstraints={{ left: -80, right: 0 }}
-                    dragElastic={0.1}
-                    onDragEnd={(_, info: PanInfo) => {
-                      if (info.offset.x < -40) {
-                        setSwipedLineId(line.id)
-                      } else {
-                        setSwipedLineId(null)
-                      }
-                    }}
-                    animate={{ x: swipedLineId === line.id ? -80 : 0 }}
-                    className="relative z-10 flex items-center gap-2"
+                    <button
+                      onClick={() => handleMoveLineDown(i)}
+                      disabled={i === playableLines.length - 1}
+                      className="p-1 rounded text-text-muted hover:text-text disabled:opacity-20 transition-opacity"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {dialogueCard}
+                  </div>
+                  <button
+                    onClick={() => handleEditLineDelete(line.id)}
+                    className="flex-shrink-0 p-1.5 rounded-lg text-error/60 hover:text-error hover:bg-error/10 transition-colors"
                   >
-                    {/* Drag handle */}
-                    <div
-                      className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-text-subtle touch-none"
-                      draggable
-                      onDragStart={(e) => {
-                        setDraggedLineId(line.id)
-                        e.dataTransfer.effectAllowed = 'move'
-                      }}
-                      onDragEnd={() => {
-                        if (dragOverIndex !== null) {
-                          const fromIdx = playableLines.findIndex(l => l.id === line.id)
-                          handleReorder(fromIdx, dragOverIndex)
-                        }
-                        setDraggedLineId(null)
-                        setDragOverIndex(null)
-                      }}
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
-                    </div>
-                    <div
-                      className={`flex-1 ${dragOverIndex === i ? 'border-t-2 border-accent' : ''}`}
-                      onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i) }}
-                      onDragLeave={() => setDragOverIndex(null)}
-                      onDrop={(e) => { e.preventDefault() }}
-                    >
-                      {dialogueCard}
-                    </div>
-                  </motion.div>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
                 </div>
               ) : (
                 <motion.div
@@ -3765,19 +3713,28 @@ export function PracticeScreen() {
       {/* Edit Mode FAB */}
       <button
         onClick={toggleEditMode}
-        className={`fixed bottom-[160px] right-4 z-40 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all active:scale-90 ${
+        className={`fixed z-40 shadow-xl transition-all active:scale-95 ${
           isEditMode
-            ? 'bg-accent text-white'
-            : 'bg-bg-surface/90 backdrop-blur border border-border text-text-muted hover:text-accent'
+            ? 'bottom-[152px] right-3 flex items-center gap-2 px-4 py-2.5 rounded-full bg-accent text-white font-medium text-sm'
+            : 'bottom-[152px] right-3 w-11 h-11 rounded-full flex items-center justify-center bg-bg-elevated border border-border/50 text-text-muted'
         }`}
-        title={isEditMode ? 'Exit edit mode' : 'Edit mode'}
       >
         {isEditMode ? (
-          <IconCheck size={20} />
+          <>
+            <IconCheck size={16} />
+            <span>Done</span>
+          </>
         ) : (
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+          <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
         )}
       </button>
+
+      {/* Edit mode banner */}
+      {isEditMode && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-accent/90 backdrop-blur text-white text-center py-1.5 text-xs font-medium tracking-wide">
+          EDIT MODE — tap line to edit, arrows to reorder
+        </div>
+      )}
 
       {/* Edit Modal */}
       <EditModal
