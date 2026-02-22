@@ -23,10 +23,12 @@
   --ai-border: rgba(99,102,241,0.25);
   --success: #10B981;
   --success-muted: rgba(16,185,129,0.12);
+  --success-border: rgba(16,185,129,0.3);
   --warning: #F59E0B;
   --warning-muted: rgba(245,158,11,0.12);
   --error: #EF4444;
   --error-muted: rgba(239,68,68,0.12);
+  --error-border: rgba(239,68,68,0.3);
   --overlay-2: rgba(255,255,255,0.02);
   --overlay-5: rgba(255,255,255,0.05);
   --overlay-10: rgba(255,255,255,0.10);
@@ -56,10 +58,12 @@
   --ai-border: rgba(122,158,147,0.20);
   --success: #858E62;
   --success-muted: rgba(133,142,98,0.10);
+  --success-border: rgba(133,142,98,0.25);
   --warning: #c5a55a;
   --warning-muted: rgba(197,165,90,0.10);
   --error: #c0392b;
   --error-muted: rgba(192,57,43,0.10);
+  --error-border: rgba(192,57,43,0.25);
   --overlay-2: rgba(0,0,0,0.02);
   --overlay-5: rgba(0,0,0,0.03);
   --overlay-10: rgba(0,0,0,0.05);

@@ -58,20 +58,15 @@ export function InsightsScreen() {
   const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
   const today = new Date().getDay()
 
-  // Sample achievements
+  // Achievement progress based on real data
+  const perfectSceneProgress = avgAccuracy >= 95 ? 100 : Math.round((avgAccuracy / 95) * 100)
+
   const achievements = [
     { name: 'First Script', icon: '📜', unlocked: true },
     { name: 'Week Warrior', icon: '🔥', unlocked: user?.streak_days ? user.streak_days >= 7 : false, progress: user?.streak_days ? (user.streak_days / 7) * 100 : 0 },
-    { name: 'Perfect Scene', icon: '🎯', unlocked: false, progress: 68 },
+    { name: 'Perfect Scene', icon: '🎯', unlocked: avgAccuracy >= 95, progress: perfectSceneProgress },
     { name: 'Century Club', icon: '💯', unlocked: false, progress: user?.total_practice_minutes ? (user.total_practice_minutes / 6000) * 100 : 0 },
     { name: 'Line Master', icon: '⭐', unlocked: false, progress: user?.total_lines_practiced ? (user.total_lines_practiced / 500) * 100 : 0 },
-  ]
-
-  // Improvement areas
-  const improvementAreas = [
-    { issue: 'Pacing consistency', progress: 72, tip: 'Try slower breathing between lines', trend: '+5%' },
-    { issue: 'Word accuracy', progress: 88, tip: 'Review script before each take', trend: '+12%' },
-    { issue: 'Line endings', progress: 65, tip: 'Commit fully to final words', trend: '-2%' },
   ]
 
   if (loading) {
@@ -215,45 +210,6 @@ export function InsightsScreen() {
         </Card>
       </div>
 
-      {/* Areas to Improve */}
-      <div className="px-5">
-        <Card padding="p-4">
-          <div className="text-[11px] font-semibold text-text-subtle tracking-widest uppercase mb-4">
-            Areas to Improve
-          </div>
-          <div className="space-y-4">
-            {improvementAreas.map((item, i) => (
-              <div key={i}>
-                <div className="flex justify-between mb-1.5">
-                  <span className="text-text text-sm font-medium">{item.issue}</span>
-                  <span className={`
-                    text-xs font-mono font-semibold
-                    ${item.progress >= 80 ? 'text-success' : 'text-warning'}
-                  `}>
-                    {item.progress}%
-                  </span>
-                </div>
-                <div className="mb-1.5">
-                  <ProgressBar 
-                    value={item.progress} 
-                    color={item.progress >= 80 ? 'var(--success)' : 'var(--warning)'} 
-                    height={4} 
-                  />
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-subtle text-[11px]">💡 {item.tip}</span>
-                  <span className={`
-                    text-[10px] font-mono
-                    ${item.trend.startsWith('+') ? 'text-success' : 'text-error'}
-                  `}>
-                    {item.trend}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
     </div>
   )
 }

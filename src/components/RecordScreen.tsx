@@ -956,8 +956,9 @@ export default function RecordScreen() {
         
         console.log('[SimpleRecord] Take created, duration:', duration, 'seconds')
         
-        // Don't auto-upload for testing - just add locally
-        setTakes(prev => [...prev, newTake])
+        // Auto-upload immediately
+        const uploadedTake = await autoUploadTake(newTake)
+        setTakes(prev => [...prev, uploadedTake])
         setRecordingTime(0)
       }
       
@@ -3182,13 +3183,6 @@ export default function RecordScreen() {
             <span className="text-sm">Back</span>
           </button>
           <div className="flex items-center gap-2">
-            {/* TEST MODE TOGGLE */}
-            <button 
-              onClick={() => setSimpleRecordMode(s => !s)}
-              className={`px-3 py-2 rounded-full text-xs font-mono ${simpleRecordMode ? 'bg-success/80 text-white' : 'bg-black/60 text-text-muted'}`}
-            >
-              {simpleRecordMode ? 'SIMPLE' : 'CANVAS'}
-            </button>
             <button onClick={() => setViewMode('review')} className="flex items-center gap-2 px-3 py-2 rounded-full bg-black/60">
               <Icons.Grid />
               <span className="text-sm">{takes.length}</span>

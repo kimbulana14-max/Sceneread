@@ -6,7 +6,6 @@ import { useStore, useScriptPractice } from '@/store'
 import { Card, Button } from './ui'
 import { IconPlay } from './icons'
 import { getAuthHeaders } from '@/lib/supabase'
-import { WelcomeSplash } from './WelcomeSplash'
 
 interface DailyStat {
   date: string
@@ -61,7 +60,6 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
   const [greeting, setGreeting] = useState('')
   
   // Tutorial state - controlled by user.onboarding_complete from Supabase
-  const [showSplash, setShowSplash] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(0)
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null)
@@ -90,27 +88,20 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
     // Only check once per component mount
     if (tutorialTriggered.current) return
     if (!user?.id) return
-    
+
     // Check the onboarding_complete flag from Supabase profile
     const isOnboardingComplete = user.onboarding_complete === true
-    
+
     if (isOnboardingComplete) {
-      // User already completed onboarding - never show splash or tutorial
-      setShowSplash(false)
       setShowTutorial(false)
       return
     }
-    
-    // First time user - show welcome splash first, then tutorial
+
+    // First time user - show tutorial (splash is handled by page.tsx)
     tutorialTriggered.current = true
-    setShowSplash(true)
+    // Delay tutorial slightly so splash finishes first
+    setTimeout(() => setShowTutorial(true), 5500)
   }, [user?.id, user?.onboarding_complete])
-  
-  // When splash completes, show tutorial
-  const handleSplashComplete = () => {
-    setShowSplash(false)
-    setShowTutorial(true)
-  }
 
   const handleNextStep = () => {
     if (tutorialStep < TUTORIAL_STEPS.length - 1) {
@@ -261,16 +252,6 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
 
   return (
     <div className="h-full flex flex-col pb-24 overflow-y-auto">
-      {/* Welcome Splash for first-time users */}
-      <AnimatePresence>
-        {showSplash && (
-          <WelcomeSplash 
-            name={user?.full_name || undefined} 
-            onComplete={handleSplashComplete} 
-          />
-        )}
-      </AnimatePresence>
-      
       {/* Header */}
       <div className="px-5 pt-8 pb-4">
         <div className="flex items-start justify-between mb-8">
@@ -395,7 +376,7 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
           <motion.button
             whileTap={{ scale: 0.98 }}
             onClick={() => handleContinuePractice(lastScript)}
-            className="w-full p-4 rounded-xl transition-all text-left border border-ai/20"
+            className="w-full p-4 rounded-xl transition-all text-left"
             style={{ background: 'var(--ai-muted)' }}
           >
             {(() => {
@@ -513,7 +494,20 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
             <div>
               <div className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Tip</div>
               <p className="text-sm text-text">
-                Use Repeat mode to build long lines word by word. It's the most effective way to memorize difficult passages.
+                {[
+                  "Use Repeat mode to build long lines word by word. It's the most effective way to memorize difficult passages.",
+                  "Try running your scene right before bed — sleep consolidates muscle memory for line delivery.",
+                  "Practice mode gives you real-time feedback on accuracy. Aim for 90%+ before moving on.",
+                  "Record yourself in Self-Tape mode, then watch it back to spot habits you can't feel in the moment.",
+                  "Speak your lines out loud even when not practicing. Hearing your own voice builds confidence.",
+                  "Focus on listening to your scene partner's cues, not just waiting for your turn to speak.",
+                  "Try different emotional reads of the same line — it unlocks choices you didn't know you had.",
+                  "Break long monologues into beats. Each beat has a new intention or shift in thought.",
+                  "Don't just memorize words — memorize the thought behind each line. The words will follow.",
+                  "Use Listen mode first to absorb the rhythm and pacing of a scene before jumping in.",
+                  "A daily streak builds discipline. Even five minutes of practice keeps the muscle alive.",
+                  "If you keep getting a line wrong, slow down. Speed comes from accuracy, not the other way around.",
+                ][Math.floor(new Date().getDate() % 12)]}
               </p>
             </div>
           </div>
