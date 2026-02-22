@@ -1520,7 +1520,8 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        const minSilence = 1500
+        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 5000
         if (silenceMs > timeout) {
           console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms (coverage:', Math.round(coverage * 100) + '%, timeout:', timeout + 'ms)')
           finishListeningRef.current();
@@ -1633,9 +1634,10 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        // If user said most of the line (>= 70%), use normal silence duration
-        // If user only said part of the line, give them 5s to continue
-        const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        // Only use short timeout when user has said nearly everything (95%+)
+        // Enforce 1500ms minimum so Deepgram finals can arrive
+        const minSilence = 1500
+        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 5000
         // Log every second so we can see the countdown
         if (silenceMs > 1000 && Math.floor(silenceMs / 1000) !== Math.floor((silenceMs - 250) / 1000)) {
           console.log('[Silence]', Math.round(silenceMs/1000) + 's /', (timeout/1000) + 's timeout | spoken:', spokenWords + '/' + expectedWords, '(' + Math.round(coverage * 100) + '%) |', JSON.stringify(hasTranscript))
@@ -1698,7 +1700,8 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        const timeout = coverage >= 0.7 ? settings.silenceDuration : 5000
+        const minSilence = 1500
+        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 5000
         if (silenceMs > timeout) {
           finishListeningRef.current()
         }
