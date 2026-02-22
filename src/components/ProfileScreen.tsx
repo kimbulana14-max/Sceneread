@@ -917,6 +917,29 @@ export function ProfileScreen() {
                           How many times to repeat the full line at the end of Build mode
                         </p>
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text mb-2">
+                          Repeat Per Segment: {settings.repeatPerSegment || 1}x
+                        </label>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4].map((n) => (
+                            <button
+                              key={n}
+                              onClick={() => updateSettings({ repeatPerSegment: n })}
+                              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                (settings.repeatPerSegment || 1) === n
+                                  ? 'bg-accent text-white'
+                                  : 'bg-bg-surface text-text-muted hover:text-text'
+                              }`}
+                            >
+                              {n}x
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-muted mt-1">
+                          How many times to repeat each segment before advancing to the next
+                        </p>
+                      </div>
                     </div>
 
                     {/* Advanced Mode Settings */}

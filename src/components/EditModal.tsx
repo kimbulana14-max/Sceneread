@@ -303,6 +303,7 @@ function LineEditForm({ formData, setFormData, mode }: { formData: any; setFormD
             <option value="dialogue">Dialogue</option>
             <option value="action">Action</option>
             <option value="transition">Transition</option>
+            <option value="narration">Narration</option>
           </select>
         </div>
         <div>
@@ -724,6 +725,7 @@ function ScriptEditForm({ formData, setFormData }: { formData: any; setFormData:
             <option value="theatre">Theatre</option>
             <option value="commercial">Commercial</option>
             <option value="voiceover">Voiceover</option>
+            <option value="narration">Narration</option>
           </select>
         </div>
         <div>

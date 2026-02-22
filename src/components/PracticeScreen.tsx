@@ -32,14 +32,14 @@ const recordLineCompletion = async (userId: string) => {
           // Update existing
           await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/daily_stats?id=eq.${existing[0].id}`, {
             method: 'PATCH',
-            headers,
+            headers: { ...headers, 'Prefer': 'return=minimal' },
             body: JSON.stringify({ lines_practiced: (existing[0].lines_practiced || 0) + 1 })
           })
         } else {
           // Insert new
           await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/daily_stats`, {
             method: 'POST',
-            headers,
+            headers: { ...headers, 'Prefer': 'return=minimal' },
             body: JSON.stringify({ user_id: userId, date: today, lines_practiced: 1, practice_minutes: 0, sessions_count: 1 })
           })
         }
@@ -66,16 +66,27 @@ const recordLineCompletion = async (userId: string) => {
         
         await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
           method: 'PATCH',
-          headers,
+          headers: { ...headers, 'Prefer': 'return=minimal' },
           body: JSON.stringify({
             streak_days: newStreak,
             streak_last_date: today,
             total_lines_practiced: (profile.total_lines_practiced || 0) + 1
           })
         })
+
+        // Update Zustand store so HomeScreen reads fresh streak data
+        const currentUser = useStore.getState().user
+        if (currentUser) {
+          useStore.getState().setUser({
+            ...currentUser,
+            streak_days: newStreak,
+            streak_last_date: today,
+            total_lines_practiced: (profile.total_lines_practiced || 0) + 1
+          })
+        }
       }
     }
-    
+
     // Trigger achievement check after stats are updated
     setTimeout(() => triggerAchievementCheck(), 500)
   } catch (err) {
@@ -180,6 +191,7 @@ export function PracticeScreen() {
   const [consecutiveWrongs, setConsecutiveWrongs] = useState(0) // Track wrong attempts for go-back logic
   const [consecutiveLineFails, setConsecutiveLineFails] = useState(0) // Track full line failures for restart-on-fail
   const [fullLineCompletions, setFullLineCompletions] = useState(0) // Track full line repetitions at end
+  const [segmentCompletions, setSegmentCompletions] = useState(0) // Track per-segment repetitions before advancing
   const [showStillThere, setShowStillThere] = useState(false) // Show "still there?" message
   const [showWaitingNudge, setShowWaitingNudge] = useState(false) // Gentle "waiting for you..." nudge
   const [lastLineAccuracy, setLastLineAccuracy] = useState<number | null>(null) // Per-line accuracy %
@@ -192,6 +204,14 @@ export function PracticeScreen() {
   const [weakLineFilter, setWeakLineFilter] = useState<string[] | null>(null) // Line IDs for drill mode
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null) // For mobile: single tap selects, double tap plays
   const lastTapRef = useRef<{ lineId: string; time: number } | null>(null) // For double tap detection
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [editingLineId, setEditingLineId] = useState<string | null>(null)
+  const [editingContent, setEditingContent] = useState('')
+  const [swipedLineId, setSwipedLineId] = useState<string | null>(null)
+  const [draggedLineId, setDraggedLineId] = useState<string | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   
   // New mode states
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -437,7 +457,7 @@ export function PracticeScreen() {
   const currentLine = playableLines[currentLineIndex]
   const userLines = playableLines.filter(l => l.is_user_line)
   const completedUserLines = userLines.filter(l => stats.completed.has(l.id))
-  const canInteract = status === 'idle' || status === 'wrong' || status === 'correct'
+  const canInteract = !isEditMode && (status === 'idle' || status === 'wrong' || status === 'correct')
 
   // Build scene header text
   const getSceneSlug = (scene: typeof currentSceneData) => {
@@ -535,6 +555,7 @@ export function PracticeScreen() {
     setHasError(false)
     setSegments([])
     setCurrentSegmentIndex(0)
+    setSegmentCompletions(0)
     setSegmentPhase('listen')
     setBuildProgress(0)
     setLastCheckpoint(0)
@@ -574,6 +595,7 @@ export function PracticeScreen() {
     setHasError(false)
     setSegments([])
     setCurrentSegmentIndex(0)
+    setSegmentCompletions(0)
     setSegmentPhase('listen')
     setBuildProgress(0)
     setLastCheckpoint(0)
@@ -1177,7 +1199,7 @@ export function PracticeScreen() {
       return
     }
     busyRef.current = true
-    const isNarrator = currentLine.line_type === 'action' || currentLine.line_type === 'transition'
+    const isNarrator = currentLine.line_type === 'action' || currentLine.line_type === 'transition' || currentLine.line_type === 'narration'
     console.log('[Play] is_user_line:', currentLine.is_user_line, 'learningMode:', learningMode)
 
     // NOTE: We intentionally do NOT pre-connect the mic here.
@@ -1923,6 +1945,7 @@ export function PracticeScreen() {
             setLastCheckpoint(0)
             setCheckpointCount(0)
             setFullLineCompletions(0) // Reset for next line
+            setSegmentCompletions(0)
             setStats(s => ({ ...s, correct: s.correct + 1, completed: new Set(Array.from(s.completed).concat(currentLine.id)) }))
             if (scriptId) {
               recordAttempt(scriptId, true)
@@ -1934,21 +1957,40 @@ export function PracticeScreen() {
             setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, settings.autoAdvanceDelay)
           }
         } else {
-          // Advance to next segment and auto-play
-          console.log('[finishListening] Advancing to segment', nextIndex, '- playing accumulated:', segs.slice(0, nextIndex + 1).join(' '))
-          setCurrentSegmentIndex(nextIndex)
-          setStatus('segment')
-          // Save repeat progress
-          if (scriptId) saveRepeatProgress(scriptId, nextIndex, nextIndex)
-          // Play the accumulated text (now including next segment)
-          const accumulatedText = segs.slice(0, nextIndex + 1).join(' ')
-          const nonce = ++segmentNonceRef.current // Guard against race conditions
-          playSegmentLiveTTS(accumulatedText).then(() => {
-            if (segmentNonceRef.current !== nonce) return // Stale callback, another action took over
-            if (!isPlayingRef.current) return // User paused, don't continue
-            startListeningForBuild(accumulatedText)
-            busyRef.current = false
-          })
+          // Check if segment needs more repetitions before advancing
+          const requiredSegReps = settings.repeatPerSegment || 1
+          const newSegCompletions = segmentCompletions + 1
+
+          if (newSegCompletions < requiredSegReps) {
+            // Repeat same segment again
+            setSegmentCompletions(newSegCompletions)
+            setStatus('segment')
+            const accumulatedText = segs.slice(0, segIdx + 1).join(' ')
+            const nonce = ++segmentNonceRef.current
+            playSegmentLiveTTS(accumulatedText).then(() => {
+              if (segmentNonceRef.current !== nonce) return
+              if (!isPlayingRef.current) return
+              startListeningForBuild(accumulatedText)
+              busyRef.current = false
+            })
+          } else {
+            // Segment fully repeated — advance to next segment
+            setSegmentCompletions(0)
+            console.log('[finishListening] Advancing to segment', nextIndex, '- playing accumulated:', segs.slice(0, nextIndex + 1).join(' '))
+            setCurrentSegmentIndex(nextIndex)
+            setStatus('segment')
+            // Save repeat progress
+            if (scriptId) saveRepeatProgress(scriptId, nextIndex, nextIndex)
+            // Play the accumulated text (now including next segment)
+            const accumulatedText = segs.slice(0, nextIndex + 1).join(' ')
+            const nonce = ++segmentNonceRef.current // Guard against race conditions
+            playSegmentLiveTTS(accumulatedText).then(() => {
+              if (segmentNonceRef.current !== nonce) return // Stale callback, another action took over
+              if (!isPlayingRef.current) return // User paused, don't continue
+              startListeningForBuild(accumulatedText)
+              busyRef.current = false
+            })
+          }
         }
         return
       }
@@ -2143,6 +2185,112 @@ export function PracticeScreen() {
     })
   }
   
+  // === Edit Mode Helpers ===
+  const toggleEditMode = () => {
+    if (!isEditMode) {
+      // Entering edit mode — stop playback
+      stopPlayback()
+      stopListening()
+      pendingListenRef.current = null
+      setIsEditMode(true)
+    } else {
+      // Exiting edit mode — clear editing state
+      setIsEditMode(false)
+      setEditingLineId(null)
+      setEditingContent('')
+      setSwipedLineId(null)
+      setDraggedLineId(null)
+      setDragOverIndex(null)
+    }
+  }
+
+  const handleEditLineSave = async (lineId: string, newContent: string) => {
+    if (!newContent.trim()) return
+    const line = lines.find(l => l.id === lineId)
+    if (!line || line.content === newContent) {
+      setEditingLineId(null)
+      return
+    }
+    try {
+      await updateLine(lineId, { content: newContent })
+      useStore.getState().setLines(lines.map(l => l.id === lineId ? { ...l, content: newContent } : l))
+    } catch (e) {
+      console.error('Failed to save line edit:', e)
+    }
+    setEditingLineId(null)
+  }
+
+  const handleEditLineSplit = async (lineId: string, beforeText: string, afterText: string) => {
+    const line = lines.find(l => l.id === lineId)
+    if (!line) return
+    try {
+      // Update current line with text before split
+      await updateLine(lineId, { content: beforeText.trim() })
+      // Insert new line after
+      const newLine = await addLine({
+        script_id: line.script_id,
+        scene_id: line.scene_id,
+        character_name: line.character_name,
+        content: afterText.trim(),
+        is_user_line: line.is_user_line,
+        line_type: line.line_type,
+        emotion: line.emotion || 'neutral',
+        sort_order: line.sort_order + 0.5,
+      })
+      const updatedLines = lines.map(l => l.id === lineId ? { ...l, content: beforeText.trim() } : l)
+      if (newLine) {
+        useStore.getState().setLines([...updatedLines, newLine].sort((a, b) => a.sort_order - b.sort_order))
+      } else {
+        useStore.getState().setLines(updatedLines)
+      }
+    } catch (e) {
+      console.error('Failed to split line:', e)
+    }
+    setEditingLineId(null)
+    setEditingContent('')
+  }
+
+  const handleEditLineDelete = async (lineId: string) => {
+    const ok = await deleteLine(lineId)
+    if (ok) {
+      useStore.getState().setLines(lines.filter(l => l.id !== lineId))
+      if (currentLineIndex >= sceneLines.length - 1) setCurrentLineIndex(Math.max(0, currentLineIndex - 1))
+    }
+    setSwipedLineId(null)
+  }
+
+  const handleReorder = async (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    const reordered = [...playableLines]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+
+    // Assign new sort_orders
+    const updates: { id: string; sort_order: number }[] = reordered.map((line, i) => ({
+      id: line.id,
+      sort_order: i,
+    }))
+
+    // Optimistic update
+    const updatedLines = lines.map(l => {
+      const upd = updates.find(u => u.id === l.id)
+      return upd ? { ...l, sort_order: upd.sort_order } : l
+    })
+    useStore.getState().setLines(updatedLines.sort((a, b) => a.sort_order - b.sort_order))
+
+    // Persist to Supabase
+    const headers = await getAuthHeaders()
+    for (const upd of updates) {
+      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${upd.id}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ sort_order: upd.sort_order }),
+      }).catch(err => console.error('Failed to update sort_order:', err))
+    }
+    setDraggedLineId(null)
+    setDragOverIndex(null)
+  }
+
   const handlePlayPause = () => {
     // Fire-and-forget — NEVER await, .play() can hang forever on iOS
     audioManager.unlockSync()
@@ -2838,7 +2986,7 @@ export function PracticeScreen() {
         {playableLines.map((line, i) => {
           const isCurrent = i === currentLineIndex
           const isUser = line.is_user_line
-          const isNarrator = line.line_type === 'action' || line.line_type === 'transition'
+          const isNarrator = line.line_type === 'action' || line.line_type === 'transition' || line.line_type === 'narration'
           const isDone = stats.completed.has(line.id)
           const charVoice = !isUser ? characters.find(c => c.name === line.character_name) : null
 
@@ -2846,18 +2994,51 @@ export function PracticeScreen() {
 
           // Action/narrator lines - NO text visibility applied (only for user lines)
           if (isNarrator) {
-            return (
-              <motion.div 
-                key={line.id} 
-                ref={(el) => { if (el) lineRefs.current.set(i, el) }}
-                animate={{ scale: isCurrent ? 1.01 : 1 }} 
-                className={`group ${canInteract ? 'cursor-pointer' : ''}`}
+            const narratorContent = (
+              <div
+                onClick={() => {
+                  if (isEditMode) {
+                    setEditingLineId(line.id)
+                    setEditingContent(line.content)
+                  } else if (canInteract) {
+                    goTo(i, true)
+                  }
+                }}
+                className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${
+                  line.line_type === 'narration'
+                    ? (isCurrent ? 'bg-accent/15 text-accent border border-accent/20' : 'bg-accent/5 text-accent/70 border border-accent/10')
+                    : (isCurrent ? 'bg-ai-highlight text-ai' : 'bg-overlay-5 text-text-muted')
+                }`}
               >
-                <div 
-                  onClick={() => canInteract && goTo(i, true)}
-                  className={`px-4 py-2.5 rounded-lg text-sm italic text-center relative ${isCurrent ? 'bg-ai-highlight text-ai' : 'bg-overlay-5 text-text-muted'}`}
-                >
-                  {line.content}
+                {line.line_type === 'narration' && (
+                  <span className="block text-[9px] uppercase tracking-widest font-semibold mb-0.5 not-italic opacity-60">Narration</span>
+                )}
+                {editingLineId === line.id ? (
+                  <textarea
+                    autoFocus
+                    value={editingContent}
+                    onChange={(e) => setEditingContent(e.target.value)}
+                    onBlur={() => handleEditLineSave(line.id, editingContent)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const ta = e.target as HTMLTextAreaElement
+                        const pos = ta.selectionStart
+                        const before = editingContent.slice(0, pos)
+                        if (before.endsWith('\n')) {
+                          e.preventDefault()
+                          const textBefore = before.slice(0, -1)
+                          const textAfter = editingContent.slice(pos)
+                          handleEditLineSplit(line.id, textBefore, textAfter)
+                        }
+                      }
+                    }}
+                    className="w-full bg-transparent text-center outline-none resize-none not-italic text-text"
+                    rows={Math.max(2, editingContent.split('\n').length)}
+                  />
+                ) : (
+                  line.content
+                )}
+                {!isEditMode && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: line, mode: 'edit' }) }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-text opacity-0 group-hover:opacity-100 transition-opacity"
@@ -2865,21 +3046,93 @@ export function PracticeScreen() {
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                   </button>
-                </div>
-              </motion.div>
+                )}
+              </div>
+            )
+
+            return (
+              <div key={line.id} className="relative" ref={(el) => { if (el) lineRefs.current.set(i, el) }}>
+                {isEditMode ? (
+                  <div className="relative overflow-hidden">
+                    {/* Delete button behind */}
+                    {swipedLineId === line.id && (
+                      <button
+                        onClick={() => handleEditLineDelete(line.id)}
+                        className="absolute right-0 top-0 bottom-0 w-20 bg-error flex items-center justify-center text-white rounded-r-lg z-0"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    )}
+                    <motion.div
+                      drag="x"
+                      dragConstraints={{ left: -80, right: 0 }}
+                      dragElastic={0.1}
+                      onDragEnd={(_, info: PanInfo) => {
+                        if (info.offset.x < -40) {
+                          setSwipedLineId(line.id)
+                        } else {
+                          setSwipedLineId(null)
+                        }
+                      }}
+                      animate={{ x: swipedLineId === line.id ? -80 : 0 }}
+                      className="relative z-10 flex items-center gap-2"
+                    >
+                      {/* Drag handle */}
+                      <div
+                        className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-text-subtle touch-none"
+                        draggable
+                        onDragStart={(e) => {
+                          setDraggedLineId(line.id)
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragEnd={() => {
+                          if (dragOverIndex !== null) {
+                            const fromIdx = playableLines.findIndex(l => l.id === line.id)
+                            handleReorder(fromIdx, dragOverIndex)
+                          }
+                          setDraggedLineId(null)
+                          setDragOverIndex(null)
+                        }}
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+                      </div>
+                      <div
+                        className={`flex-1 ${dragOverIndex === i ? 'border-t-2 border-accent' : ''}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i) }}
+                        onDragLeave={() => setDragOverIndex(null)}
+                        onDrop={(e) => { e.preventDefault() }}
+                      >
+                        {narratorContent}
+                      </div>
+                    </motion.div>
+                  </div>
+                ) : (
+                  <motion.div
+                    animate={{ scale: isCurrent ? 1.01 : 1 }}
+                    className={`group ${canInteract ? 'cursor-pointer' : ''}`}
+                  >
+                    {narratorContent}
+                  </motion.div>
+                )}
+              </div>
             )
           }
 
           // Dialogue lines
           const isSelected = selectedLineId === line.id
-          
-          // Handle tap: single tap selects, double tap plays
+
+          // Handle tap: single tap selects, double tap plays (in edit mode, tap to inline edit)
           const handleLineTap = () => {
+            if (isEditMode) {
+              setEditingLineId(line.id)
+              setEditingContent(line.content)
+              return
+            }
             if (!canInteract) return
-            
+
             const now = Date.now()
             const lastTap = lastTapRef.current
-            
+
             // Check for double tap (within 300ms on same line)
             if (lastTap && lastTap.lineId === line.id && now - lastTap.time < 300) {
               // Double tap - play the line
@@ -2896,14 +3149,9 @@ export function PracticeScreen() {
               lastTapRef.current = { lineId: line.id, time: now }
             }
           }
-          
-          return (
-            <motion.div 
-              key={line.id} 
-              ref={(el) => { if (el) lineRefs.current.set(i, el) }}
-              animate={{ scale: isCurrent ? 1.01 : 1 }} 
-              className={`group rounded-lg ${canInteract ? 'cursor-pointer' : ''} ${isCurrent ? 'bg-ai-highlight' : isDone ? 'bg-success/5' : ''} ${isSelected ? 'bg-ai-muted' : ''}`}
-            >
+
+          const dialogueCard = (
+            <div className={`group rounded-lg ${!isEditMode && canInteract ? 'cursor-pointer' : ''} ${isCurrent && !isEditMode ? 'bg-ai-highlight' : isDone ? 'bg-success/5' : ''} ${isSelected && !isEditMode ? 'bg-ai-muted' : ''}`}>
               <div className="p-3" onClick={handleLineTap}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`text-xs font-bold ${isUser ? 'text-accent' : 'text-ai'}`}>{line.character_name}</span>
@@ -2940,8 +3188,31 @@ export function PracticeScreen() {
                     </button>
                   </div>
                 </div>
-                {/* Line content with real-time word highlighting and build progress underline */}
-                {isCurrent && isUser && (status === 'listening' || status === 'segment' || status === 'correct' || status === 'wrong' || (learningMode === 'repeat' && segments.length > 0)) ? (
+                {/* Line content — inline edit in edit mode, or word highlighting in practice */}
+                {editingLineId === line.id ? (
+                  <textarea
+                    autoFocus
+                    value={editingContent}
+                    onChange={(e) => setEditingContent(e.target.value)}
+                    onBlur={() => handleEditLineSave(line.id, editingContent)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const ta = e.target as HTMLTextAreaElement
+                        const pos = ta.selectionStart
+                        const before = editingContent.slice(0, pos)
+                        if (before.endsWith('\n')) {
+                          e.preventDefault()
+                          const textBefore = before.slice(0, -1)
+                          const textAfter = editingContent.slice(pos)
+                          handleEditLineSplit(line.id, textBefore, textAfter)
+                        }
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full bg-bg-surface/50 text-text text-sm leading-relaxed p-2 rounded outline-none border border-accent/30 resize-none"
+                    rows={Math.max(2, editingContent.split('\n').length)}
+                  />
+                ) : isCurrent && isUser && (status === 'listening' || status === 'segment' || status === 'correct' || status === 'wrong' || (learningMode === 'repeat' && segments.length > 0)) ? (
                   <p className="text-sm leading-relaxed">
                     {(() => {
                       // Split content into parts: spoken words and parentheticals
@@ -3076,7 +3347,73 @@ export function PracticeScreen() {
                   </div>
                 )}
               </div>
-            </motion.div>
+            </div>
+          )
+
+          return (
+            <div key={line.id} className="relative" ref={(el) => { if (el) lineRefs.current.set(i, el) }}>
+              {isEditMode ? (
+                <div className="relative overflow-hidden">
+                  {/* Delete button behind */}
+                  {swipedLineId === line.id && (
+                    <button
+                      onClick={() => handleEditLineDelete(line.id)}
+                      className="absolute right-0 top-0 bottom-0 w-20 bg-error flex items-center justify-center text-white rounded-r-lg z-0"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  )}
+                  <motion.div
+                    drag="x"
+                    dragConstraints={{ left: -80, right: 0 }}
+                    dragElastic={0.1}
+                    onDragEnd={(_, info: PanInfo) => {
+                      if (info.offset.x < -40) {
+                        setSwipedLineId(line.id)
+                      } else {
+                        setSwipedLineId(null)
+                      }
+                    }}
+                    animate={{ x: swipedLineId === line.id ? -80 : 0 }}
+                    className="relative z-10 flex items-center gap-2"
+                  >
+                    {/* Drag handle */}
+                    <div
+                      className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 text-text-subtle touch-none"
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedLineId(line.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragEnd={() => {
+                        if (dragOverIndex !== null) {
+                          const fromIdx = playableLines.findIndex(l => l.id === line.id)
+                          handleReorder(fromIdx, dragOverIndex)
+                        }
+                        setDraggedLineId(null)
+                        setDragOverIndex(null)
+                      }}
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+                    </div>
+                    <div
+                      className={`flex-1 ${dragOverIndex === i ? 'border-t-2 border-accent' : ''}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i) }}
+                      onDragLeave={() => setDragOverIndex(null)}
+                      onDrop={(e) => { e.preventDefault() }}
+                    >
+                      {dialogueCard}
+                    </div>
+                  </motion.div>
+                </div>
+              ) : (
+                <motion.div
+                  animate={{ scale: isCurrent ? 1.01 : 1 }}
+                >
+                  {dialogueCard}
+                </motion.div>
+              )}
+            </div>
           )
         })}
 
@@ -3365,8 +3702,8 @@ export function PracticeScreen() {
             <div className="absolute -inset-1 rounded-full bg-accent/20 blur-sm animate-pulse" />
           )}
           <button 
-            onClick={handlePlayPause} 
-            disabled={status === 'connecting'} 
+            onClick={handlePlayPause}
+            disabled={status === 'connecting' || isEditMode}
             className={`relative w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-200 ${
               status === 'listening' ? 'bg-gradient-to-br from-ai to-ai/80 shadow-lg shadow-ai/30' :
               (isPlaying || status === 'ai' || status === 'narrator' || status === 'segment') ? 'bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg shadow-orange-500/20' :
@@ -3425,11 +3762,28 @@ export function PracticeScreen() {
         </button>
       </div>
 
+      {/* Edit Mode FAB */}
+      <button
+        onClick={toggleEditMode}
+        className={`fixed bottom-[160px] right-4 z-40 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all active:scale-90 ${
+          isEditMode
+            ? 'bg-accent text-white'
+            : 'bg-bg-surface/90 backdrop-blur border border-border text-text-muted hover:text-accent'
+        }`}
+        title={isEditMode ? 'Exit edit mode' : 'Edit mode'}
+      >
+        {isEditMode ? (
+          <IconCheck size={20} />
+        ) : (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+        )}
+      </button>
+
       {/* Edit Modal */}
-      <EditModal 
-        isOpen={editModal !== null} 
-        onClose={() => setEditModal(null)} 
-        type={editModal?.type || 'line'} 
+      <EditModal
+        isOpen={editModal !== null}
+        onClose={() => setEditModal(null)}
+        type={editModal?.type || 'line'}
         data={editModal?.data} 
         mode={editModal?.mode || 'edit'} 
         onSave={async (data) => { 

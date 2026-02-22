@@ -27,6 +27,7 @@ export interface PracticeSettings {
   coldReadTime: number
   cueOnlyWords: number
   repeatFullLineTimes: number // How many times to repeat full line at end (1-4)
+  repeatPerSegment: number // How many times to repeat each segment before advancing (1-4)
   speakCharacterNames: boolean // Whether to announce character names before lines
   speakParentheticals: boolean // Whether to narrate parenthetical directions (e.g., "(angrily)")
   usePreGeneratedAudio: boolean // Whether to use pre-generated audio URLs when available
@@ -208,6 +209,7 @@ export const defaultSettings: PracticeSettings = {
   coldReadTime: 3,
   cueOnlyWords: 0,
   repeatFullLineTimes: 1,
+  repeatPerSegment: 1,
   speakCharacterNames: false,
   speakParentheticals: false,
   usePreGeneratedAudio: true,
@@ -247,7 +249,7 @@ const debouncedSave = (userId: string, data: { settings?: PracticeSettings; scri
       const headers = await getAuthHeaders()
       await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: 'PATCH',
-        headers,
+        headers: { ...headers, 'Prefer': 'return=minimal' },
         body: JSON.stringify(data)
       })
     } catch (err) {
@@ -535,7 +537,7 @@ const debouncedRecordingSave = (userId: string, data: {
       const headers = await getAuthHeaders()
       await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: 'PATCH',
-        headers,
+        headers: { ...headers, 'Prefer': 'return=minimal' },
         body: JSON.stringify(data)
       })
       console.log('[RecordingSettings] Saved to Supabase')

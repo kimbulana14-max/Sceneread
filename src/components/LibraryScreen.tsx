@@ -335,7 +335,7 @@ export function LibraryScreen() {
   const totalPages = scriptsArray.reduce((sum, s) => sum + (s.page_count || 0), 0)
 
   // Get unique categories from scripts for dynamic filter - match scriptTypes in ImportModal
-  const categories = ['all', 'tv_audition', 'film_audition', 'self_tape', 'scene_study', 'theatre', 'commercial', 'voiceover', 'monologue', 'other']
+  const categories = ['all', 'tv_audition', 'film_audition', 'self_tape', 'scene_study', 'theatre', 'commercial', 'voiceover', 'monologue', 'narration', 'other']
   
   // Better category display names
   const categoryLabels: Record<string, string> = {
@@ -348,6 +348,7 @@ export function LibraryScreen() {
     'commercial': 'Commercial',
     'voiceover': 'VO',
     'monologue': 'Monologue',
+    'narration': 'Narration',
     'other': 'Other'
   }
 
@@ -646,6 +647,7 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
     { value: 'theatre', label: 'Theatre' },
     { value: 'commercial', label: 'Commercial' },
     { value: 'voiceover', label: 'Voiceover' },
+    { value: 'narration', label: 'Narration' },
     { value: 'other', label: 'Other' },
   ]
 
