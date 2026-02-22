@@ -1733,26 +1733,31 @@ export function PracticeScreen() {
       setHasRecording(false)
     }
 
-    // Try Whisper for better judgment accuracy (prompt biases toward expected words)
+    // Only call Whisper if Deepgram would mark it wrong (saves ~1s on correct answers)
     let spoken = deepgramSpoken
-    if (blob && blob.size > 1024 && deepgramSpoken && expectedLineRef.current) {
-      try {
-        const formData = new FormData()
-        formData.append('audio', blob, 'audio.webm')
-        formData.append('prompt', expectedLineRef.current.slice(0, 800))
-        const resp = await fetch('/api/whisper-transcribe', { method: 'POST', body: formData })
-        if (resp.ok) {
-          const data = await resp.json()
-          if (data.transcript && data.transcript.trim()) {
-            console.log('[Whisper] transcript:', JSON.stringify(data.transcript), 'deepgram:', JSON.stringify(deepgramSpoken))
-            spoken = data.transcript.trim()
-            // Update displayed transcript to Whisper's version
-            setTranscript(spoken)
-            transcriptRef.current = spoken
+    if (deepgramSpoken && expectedLineRef.current) {
+      const quickCheck = checkAccuracy(expectedLineRef.current, deepgramSpoken, settings.strictMode, characterNameSet)
+      if (!quickCheck.isCorrect && blob && blob.size > 1024) {
+        // Deepgram says wrong — get Whisper's second opinion (prompt biases toward expected words)
+        try {
+          const formData = new FormData()
+          formData.append('audio', blob, 'audio.webm')
+          formData.append('prompt', expectedLineRef.current.slice(0, 800))
+          const resp = await fetch('/api/whisper-transcribe', { method: 'POST', body: formData })
+          if (resp.ok) {
+            const data = await resp.json()
+            if (data.transcript && data.transcript.trim()) {
+              console.log('[Whisper] second opinion:', JSON.stringify(data.transcript), 'deepgram:', JSON.stringify(deepgramSpoken))
+              spoken = data.transcript.trim()
+              setTranscript(spoken)
+              transcriptRef.current = spoken
+            }
           }
+        } catch (e) {
+          console.warn('[Whisper] Failed, using Deepgram transcript:', e)
         }
-      } catch (e) {
-        console.warn('[Whisper] Failed, using Deepgram transcript:', e)
+      } else {
+        console.log('[Deepgram] Correct on first check, skipping Whisper')
       }
     }
 

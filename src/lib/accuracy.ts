@@ -689,39 +689,23 @@ export function getSubsequenceWordMatch(
     return { matchedIndices, matchedCount: 0, coverage: 0 }
   }
 
-  // Build match matrix (boolean: do these words match?)
-  // Then run LCS with backtracking
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-
-  for (let i = 1; i <= m; i++) {
-    const ei = expIndices[i - 1]
-    const expWord = expectedWords[ei]
-    const expOrig = expectedWordsWithOrig[ei].original
-    const isFirst = ei === 0
-    for (let j = 1; j <= n; j++) {
-      if (wordsMatch(expWord, filteredSpoken[j - 1], expOrig, isFirst, characterNames)) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+  // Greedy left-to-right scan: for each spoken word in order,
+  // find the earliest unmatched expected word that matches.
+  // This ensures green words light up sequentially from left to right.
+  let expPtr = 0 // Next expected word to try matching
+  for (let j = 0; j < filteredSpoken.length && expPtr < expIndices.length; j++) {
+    // Try to match this spoken word against the next unmatched expected words
+    // Allow skipping up to 2 expected words ahead (to handle small misses)
+    for (let look = expPtr; look < Math.min(expPtr + 3, expIndices.length); look++) {
+      const ei = expIndices[look]
+      const expWord = expectedWords[ei]
+      const expOrig = expectedWordsWithOrig[ei].original
+      const isFirst = ei === 0
+      if (wordsMatch(expWord, filteredSpoken[j], expOrig, isFirst, characterNames)) {
+        matchedIndices.add(ei)
+        expPtr = look + 1
+        break
       }
-    }
-  }
-
-  // Backtrack to find which expected indices matched
-  let i = m, j = n
-  while (i > 0 && j > 0) {
-    const ei = expIndices[i - 1]
-    const expWord = expectedWords[ei]
-    const expOrig = expectedWordsWithOrig[ei].original
-    const isFirst = ei === 0
-    if (wordsMatch(expWord, filteredSpoken[j - 1], expOrig, isFirst, characterNames)) {
-      matchedIndices.add(ei)
-      i--
-      j--
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      i--
-    } else {
-      j--
     }
   }
 
