@@ -1355,14 +1355,32 @@ export function PracticeScreen() {
         setStatus('idle')
         busyRef.current = false
       }
-    } else {
-      setStatus(isNarrator ? 'narrator' : 'ai')
-      if (!isNarrator) {
-        const charVoice = characters.find(c => c.name === currentLine.character_name)?.voice_id
-        await speakCharacterName(currentLine.character_name, charVoice, currentLine.audio_url_name)
-        // Speak parenthetical if enabled and present
-        await speakParenthetical(currentLine.parenthetical, currentLine.audio_url_parenthetical)
+    } else if (isNarrator) {
+      // Stage direction handling — respect directionsMode
+      if (directionsMode === 'spoken') {
+        setStatus('narrator')
+        const actionAudio = currentLine.audio_url_action || currentLine.audio_url
+        if (actionAudio && settings.usePreGeneratedAudio) {
+          await playAudio(actionAudio)
+        } else if (currentLine.audio_url) {
+          await playAudio(currentLine.audio_url)
+        } else {
+          await playSegmentLiveTTS(currentLine.content, 'en-AU-Chirp3-HD-Rasalgethi')
+        }
+      } else if (directionsMode === 'shown') {
+        setStatus('narrator')
+        await new Promise(r => setTimeout(r, 1500))
       }
+      // 'muted' — skip entirely, just advance
+      setStatus('idle')
+      busyRef.current = false
+      if (isPlayingRef.current) next()
+    } else {
+      setStatus('ai')
+      const charVoice = characters.find(c => c.name === currentLine.character_name)?.voice_id
+      await speakCharacterName(currentLine.character_name, charVoice, currentLine.audio_url_name)
+      // Speak parenthetical if enabled and present
+      await speakParenthetical(currentLine.parenthetical, currentLine.audio_url_parenthetical)
       // Play pre-generated audio, fall back to live TTS if missing
       if (currentLine.audio_url) {
         await playAudio(currentLine.audio_url)
@@ -1542,7 +1560,7 @@ export function PracticeScreen() {
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
         const minSilence = 1500
-        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 5000
+        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 2500
         if (silenceMs > timeout) {
           console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms (coverage:', Math.round(coverage * 100) + '%, timeout:', timeout + 'ms)')
           finishListeningRef.current();
@@ -1658,7 +1676,7 @@ export function PracticeScreen() {
         // Only use short timeout when user has said nearly everything (95%+)
         // Enforce 1500ms minimum so Deepgram finals can arrive
         const minSilence = 1500
-        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 5000
+        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 2500
         // Log every second so we can see the countdown
         if (silenceMs > 1000 && Math.floor(silenceMs / 1000) !== Math.floor((silenceMs - 250) / 1000)) {
           console.log('[Silence]', Math.round(silenceMs/1000) + 's /', (timeout/1000) + 's timeout | spoken:', spokenWords + '/' + expectedWords, '(' + Math.round(coverage * 100) + '%) |', JSON.stringify(hasTranscript))
@@ -1723,11 +1741,11 @@ export function PracticeScreen() {
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
         const minSilence = 1500
-        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 5000
+        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 2500
         if (silenceMs > timeout) {
           finishListeningRef.current()
         }
-      } else if (silenceMs > 15000) {
+      } else if (silenceMs > 8000) {
         finishListeningRef.current()
       }
     }, 250)
@@ -2990,7 +3008,7 @@ export function PracticeScreen() {
           const isDone = stats.completed.has(line.id)
           const charVoice = !isUser ? characters.find(c => c.name === line.character_name) : null
 
-          if (learningMode === 'listen' && isNarrator && directionsMode === 'muted' && !isCurrent) return null
+          if (isNarrator && directionsMode === 'muted' && !isCurrent) return null
 
           // Action/narrator lines - NO text visibility applied (only for user lines)
           if (isNarrator) {
