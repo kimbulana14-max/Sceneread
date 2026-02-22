@@ -2715,6 +2715,29 @@ export function PracticeScreen() {
                       </div>
                     </div>
                   )}
+
+                  {/* Segment Repetitions (repeat mode) */}
+                  {learningMode === 'repeat' && (
+                    <div>
+                      <label className="text-xs text-text-muted uppercase tracking-wide block mb-1.5">Segment Repetitions</label>
+                      <p className="text-[11px] text-text-subtle mb-3">Repeat each chunk this many times before advancing</p>
+                      <div className="flex gap-2">
+                        {[1, 2, 3, 4].map(n => (
+                          <button
+                            key={n}
+                            onClick={() => updateSettings({ repeatPerSegment: n })}
+                            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                              (settings.repeatPerSegment || 1) === n
+                                ? 'bg-accent text-white'
+                                : 'bg-bg-surface text-text-muted hover:text-text'
+                            }`}
+                          >
+                            {n}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </SettingsSection>
 
                 {/* ── AUDIO & VOICES ── */}
