@@ -329,6 +329,12 @@ function wordsMatch(
     if (levenshtein(expected, spoken) <= 1) return true
   }
 
+  // Edit distance fallback for longer words (6+ chars) - allow distance 2
+  // Catches STT artifacts like "corkster"/"corkscrew", "morning"/"mourning"
+  if (expected.length >= 6 && spoken.length >= 6) {
+    if (levenshtein(expected, spoken) <= 2) return true
+  }
+
   // Phonetic fallback (Soundex) for words >= 2 chars
   // Catches homophones: "scene"/"seen", "knight"/"night"
   if (expected.length >= 2 && spoken.length >= 2) {
@@ -404,6 +410,28 @@ export function checkAccuracy(expected: string, spoken: string, strictMode: bool
       expectedIdx++
       spokenIdx++
       continue
+    }
+
+    // Compound word: spoken "cork screw" → expected "corkscrew"
+    if (spokenIdx + 1 < spokenWords.length) {
+      const joined = spkWord + spokenWords[spokenIdx + 1]
+      if (wordsMatch(expWord, joined, expOrig, isFirstWord, characterNames)) {
+        matchedCount++
+        expectedIdx++
+        spokenIdx += 2
+        continue
+      }
+    }
+
+    // Split word: expected "corkscrew" vs spoken merged, or two expected words merged into one spoken
+    if (expectedIdx + 1 < expectedWords.length) {
+      const joinedExp = expWord + expectedWords[expectedIdx + 1]
+      if (wordsMatch(joinedExp, spkWord, expOrig, isFirstWord, characterNames)) {
+        matchedCount += 2
+        expectedIdx += 2
+        spokenIdx++
+        continue
+      }
     }
 
     // Check multi-word expansions (e.g., "i'm" vs "i am")
@@ -891,11 +919,39 @@ export function getWordByWordResults(expected: string, spoken: string, character
       spokenIdx++
       continue
     }
-    
+
+    // Compound word: spoken "cork screw" → expected "corkscrew"
+    if (spokenIdx + 1 < spokenWords.length) {
+      const joined = spkWord + spokenWords[spokenIdx + 1]
+      if (wordsMatch(expWord, joined, expOrig, isFirstWord, characterNames)) {
+        results.push('correct')
+        alignedSpoken.push(joined)
+        expectedIdx++
+        spokenIdx += 2
+        continue
+      }
+    }
+
+    // Split word: two expected words merged into one spoken word
+    if (expectedIdx + 1 < expectedWords.length) {
+      const joinedExp = expWord + expectedWords[expectedIdx + 1]
+      if (wordsMatch(joinedExp, spkWord, expOrig, isFirstWord, characterNames)) {
+        results.push('correct')
+        alignedSpoken.push(spkWord)
+        expectedIdx++
+        // Mark second expected word as correct too
+        results.push('correct')
+        alignedSpoken.push('')
+        expectedIdx++
+        spokenIdx++
+        continue
+      }
+    }
+
     // Check multi-word expansions (e.g., "i'm" vs "i am")
     const expExpansions = EQUIVALENTS[expWord] || []
     let foundExpansion = false
-    
+
     for (const expansion of expExpansions) {
       const expWords = expansion.split(' ')
       if (expWords.length > 1) {
@@ -911,7 +967,7 @@ export function getWordByWordResults(expected: string, spoken: string, character
       }
     }
     if (foundExpansion) continue
-    
+
     // Check multi-word contractions (e.g., "i am" vs "i'm")
     const spkExpansions = EQUIVALENTS[spkWord] || []
     for (const expansion of spkExpansions) {

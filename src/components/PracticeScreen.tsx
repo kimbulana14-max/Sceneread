@@ -1671,7 +1671,8 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
-    // Update Deepgram keyterms for segment words
+    // Start recording audio for Whisper judgment
+    stt.startRecording()
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
@@ -1711,7 +1712,7 @@ export function PracticeScreen() {
     }, 250)
   }
 
-  const finishListening = useCallback(() => {
+  const finishListening = useCallback(async () => {
     if (!listeningRef.current) return
     listeningRef.current = false
     setShowWaitingNudge(false)
@@ -1721,19 +1722,40 @@ export function PracticeScreen() {
 
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
 
-    const spoken = transcriptRef.current.trim()
+    const deepgramSpoken = transcriptRef.current.trim()
 
-    // Stop recording — store blob for playback (non-blocking)
-    stt.stopRecording().then(blob => {
-      if (blob && blob.size > 0) {
-        lastRecordingRef.current = blob
-        setHasRecording(true)
-      } else {
-        setHasRecording(false)
+    // Stop recording and get audio blob
+    const blob = await stt.stopRecording()
+    if (blob && blob.size > 0) {
+      lastRecordingRef.current = blob
+      setHasRecording(true)
+    } else {
+      setHasRecording(false)
+    }
+
+    // Try Whisper for better judgment accuracy (prompt biases toward expected words)
+    let spoken = deepgramSpoken
+    if (blob && blob.size > 1024 && deepgramSpoken && expectedLineRef.current) {
+      try {
+        const formData = new FormData()
+        formData.append('audio', blob, 'audio.webm')
+        formData.append('prompt', expectedLineRef.current.slice(0, 800))
+        const resp = await fetch('/api/whisper-transcribe', { method: 'POST', body: formData })
+        if (resp.ok) {
+          const data = await resp.json()
+          if (data.transcript && data.transcript.trim()) {
+            console.log('[Whisper] transcript:', JSON.stringify(data.transcript), 'deepgram:', JSON.stringify(deepgramSpoken))
+            spoken = data.transcript.trim()
+            // Update displayed transcript to Whisper's version
+            setTranscript(spoken)
+            transcriptRef.current = spoken
+          }
+        }
+      } catch (e) {
+        console.warn('[Whisper] Failed, using Deepgram transcript:', e)
       }
-    })
+    }
 
-    // Judge immediately using Deepgram transcript
     // Calculate pacing comparison
     const userDuration = speechStartTimeRef.current > 0 ? Date.now() - speechStartTimeRef.current : 0
     const targetDuration = targetDurationRef.current
