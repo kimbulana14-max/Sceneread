@@ -2323,8 +2323,13 @@ export function PracticeScreen() {
 
   const handleTitleSave = async () => {
     if (currentScript && titleValue.trim() && titleValue !== currentScript.title) {
-      await updateScript(currentScript.id, { title: titleValue.trim() })
-      useStore.getState().setCurrentScript({ ...currentScript, title: titleValue.trim() })
+      const newTitle = titleValue.trim()
+      await updateScript(currentScript.id, { title: newTitle })
+      useStore.getState().setCurrentScript({ ...currentScript, title: newTitle })
+      // Also update the scripts array so LibraryScreen shows the new title
+      const store = useStore.getState()
+      const scripts = store.scripts || []
+      store.setScripts(scripts.map((s: any) => s.id === currentScript.id ? { ...s, title: newTitle } : s))
     }
     setEditingTitle(false)
   }
@@ -2440,7 +2445,7 @@ export function PracticeScreen() {
             onBlur={handleTitleSave}
             onKeyDown={e => { if (e.key === 'Enter') handleTitleSave(); if (e.key === 'Escape') setEditingTitle(false) }}
             autoFocus
-            className="flex-1 mx-4 text-base font-semibold text-text text-center bg-bg-surface/50 rounded-lg px-3 py-1 border border-accent/50 outline-none"
+            className="flex-1 mx-4 text-base font-semibold text-text text-center bg-transparent rounded-lg px-3 py-1 border border-accent/50 outline-none"
           />
         ) : (
           <button 

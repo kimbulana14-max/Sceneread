@@ -882,14 +882,25 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
               if (script.total_lines > 0) {
                 clearInterval(checkInterval)
                 addDebug(`SUCCESS! Script ready: ${script.id}`)
-                
+
+                // If user provided a custom title, override whatever n8n set
+                if (scriptTitle && scriptTitle.trim() && script.title !== scriptTitle.trim()) {
+                  const userTitle = scriptTitle.trim()
+                  addDebug(`Overriding title: "${script.title}" → "${userTitle}"`)
+                  await fetch(
+                    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/scripts?id=eq.${script.id}`,
+                    { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ title: userTitle }) }
+                  )
+                  script.title = userTitle
+                }
+
                 // Get character count
                 const charsResponse = await fetch(
                   `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/characters?script_id=eq.${script.id}&select=id`,
                   { headers }
                 )
                 const chars = charsResponse.ok ? await charsResponse.json() : []
-                
+
                 setCharacterCount(chars?.length || 0)
                 setImportedScript(script)
                 setAudioGenerating(true)
