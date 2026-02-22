@@ -235,6 +235,7 @@ export function PracticeScreen() {
   const segmentNonceRef = useRef<number>(0) // Nonce to prevent race conditions in repeat mode
   const segmentsRef = useRef<string[]>([]) // Current segments (ref for async callbacks)
   const currentSegmentIndexRef = useRef<number>(0) // Current segment index (ref for async callbacks)
+  const segmentCompletionsRef = useRef<number>(0) // Segment repetition count (ref for async callbacks)
   const pendingListenRef = useRef<(() => void) | null>(null) // Pending listen action when autoStartRecording is off
   const aiFinishTimeRef = useRef<number>(0) // When AI audio finished playing
   const speechStartTimeRef = useRef<number>(0) // When user first started speaking
@@ -342,6 +343,7 @@ export function PracticeScreen() {
   useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
   useEffect(() => { segmentsRef.current = segments }, [segments])
   useEffect(() => { currentSegmentIndexRef.current = currentSegmentIndex }, [currentSegmentIndex])
+  useEffect(() => { segmentCompletionsRef.current = segmentCompletions }, [segmentCompletions])
   
   // Set up reconnect function for auto-reconnect on disconnect
   useEffect(() => {
@@ -1942,6 +1944,7 @@ export function PracticeScreen() {
             setLastCheckpoint(0)
             setCheckpointCount(0)
             setFullLineCompletions(0) // Reset for next line
+            segmentCompletionsRef.current = 0
             setSegmentCompletions(0)
             setStats(s => ({ ...s, correct: s.correct + 1, completed: new Set(Array.from(s.completed).concat(currentLine.id)) }))
             if (scriptId) {
@@ -1956,10 +1959,11 @@ export function PracticeScreen() {
         } else {
           // Check if segment needs more repetitions before advancing
           const requiredSegReps = settings.repeatPerSegment || 1
-          const newSegCompletions = segmentCompletions + 1
+          const newSegCompletions = segmentCompletionsRef.current + 1
 
           if (newSegCompletions < requiredSegReps) {
             // Repeat same segment again
+            segmentCompletionsRef.current = newSegCompletions
             setSegmentCompletions(newSegCompletions)
             setStatus('segment')
             const accumulatedText = segs.slice(0, segIdx + 1).join(' ')
@@ -1972,6 +1976,7 @@ export function PracticeScreen() {
             })
           } else {
             // Segment fully repeated — advance to next segment
+            segmentCompletionsRef.current = 0
             setSegmentCompletions(0)
             console.log('[finishListening] Advancing to segment', nextIndex, '- playing accumulated:', segs.slice(0, nextIndex + 1).join(' '))
             setCurrentSegmentIndex(nextIndex)
