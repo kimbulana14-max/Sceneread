@@ -22,9 +22,9 @@ export function TabBar() {
   const { activeTab, setActiveTab } = useStore()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 safe-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 safe-bottom pointer-events-none">
       <div className="bg-gradient-to-t from-bg via-bg to-transparent pt-6 pb-2 px-4">
-        <div className="flex items-center justify-around max-w-md mx-auto">
+        <div className="flex items-center justify-around max-w-md mx-auto pointer-events-auto">
           {tabs.map(({ id, label, Icon }) => {
             const isActive = activeTab === id
             return (
