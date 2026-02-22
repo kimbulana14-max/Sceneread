@@ -2165,7 +2165,17 @@ export function PracticeScreen() {
   const handlePlayPause = async () => {
     // Unlock audio on user interaction (critical for mobile)
     await audioManager.unlock()
-    
+
+    // Prime the actual <audio> element within this user gesture so iOS
+    // allows programmatic .play() calls later (autoplay per-element policy).
+    if (audioRef.current) {
+      audioRef.current.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      try { await audioRef.current.play() } catch {}
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current.src = ''
+    }
+
     // If anything is happening, stop it immediately
     if (isPlaying || status !== 'idle') {
       stopPlayback()
@@ -2188,7 +2198,16 @@ export function PracticeScreen() {
   const handleModeChange = async (mode: LearningMode) => {
     // Unlock audio on user interaction (critical for mobile)
     await audioManager.unlock()
-    
+
+    // Prime <audio> element for iOS (same as handlePlayPause)
+    if (audioRef.current) {
+      audioRef.current.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      try { await audioRef.current.play() } catch {}
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current.src = ''
+    }
+
     fullReset()
     setLearningMode(mode) 
     setCurrentLineIndex(0)
