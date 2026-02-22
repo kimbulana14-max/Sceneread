@@ -2467,8 +2467,8 @@ export function PracticeScreen() {
         <div className="flex items-center gap-2">
           {micReady && <span className="w-2 h-2 rounded-full bg-success" />}
           {/* Notes visibility toggle */}
-          <button 
-            onClick={() => setShowNotes(!showNotes)} 
+          <button
+            onClick={() => setShowNotes(!showNotes)}
             className={`p-2 rounded-full transition-colors ${showNotes ? 'text-ai' : 'text-text-subtle'}`}
             title={showNotes ? 'Hide notes' : 'Show notes'}
           >
@@ -2482,6 +2482,16 @@ export function PracticeScreen() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
               </svg>
             )}
+          </button>
+          {/* Edit mode toggle */}
+          <button
+            onClick={toggleEditMode}
+            className={`p-2 rounded-full transition-colors ${isEditMode ? 'bg-accent/20 text-accent' : 'text-text-subtle'}`}
+            title={isEditMode ? 'Exit edit mode' : 'Edit mode'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+            </svg>
           </button>
           <button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-full ${showSettings ? 'bg-accent/20 text-accent' : 'text-text-muted'}`}>
             <IconSettings size={18} />
@@ -3156,33 +3166,35 @@ export function PracticeScreen() {
                   {(line.parenthetical || line.delivery_note) && <span className="text-[10px] text-warning/80 italic">({line.parenthetical || line.delivery_note})</span>}
                   {line.notes && <span className="text-[10px] text-ai font-medium">•</span>}
                   
-                  {/* Action buttons - show on hover OR when selected (for mobile) */}
-                  <div className={`ml-auto flex gap-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                    {/* Play button - visible when selected */}
-                    {isSelected && canInteract && (
+                  {/* Action buttons - hidden in edit mode to reduce clutter */}
+                  {!isEditMode && (
+                    <div className={`ml-auto flex gap-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                      {/* Play button - visible when selected */}
+                      {isSelected && canInteract && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); goTo(i, true); setSelectedLineId(null) }}
+                          className="p-1.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent"
+                          title="Play from here"
+                        >
+                          <IconPlay size={14} />
+                        </button>
+                      )}
                       <button
-                        onClick={(e) => { e.stopPropagation(); goTo(i, true); setSelectedLineId(null) }}
-                        className="p-1.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent"
-                        title="Play from here"
+                        onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: line, mode: 'edit' }); setSelectedLineId(null) }}
+                        className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-text"
+                        title="Edit line"
                       >
-                        <IconPlay size={14} />
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                       </button>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: line, mode: 'edit' }); setSelectedLineId(null) }}
-                      className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-text"
-                      title="Edit line"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: { ...line, afterLineId: line.id, script_id: line.script_id, scene_id: line.scene_id, sort_order: line.sort_order + 1 }, mode: 'add' }); setSelectedLineId(null) }}
-                      className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-success"
-                      title="Add line after"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    </button>
-                  </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: { ...line, afterLineId: line.id, script_id: line.script_id, scene_id: line.scene_id, sort_order: line.sort_order + 1 }, mode: 'add' }); setSelectedLineId(null) }}
+                        className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-success"
+                        title="Add line after"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {/* Line content — inline edit in edit mode, or word highlighting in practice */}
                 {editingLineId === line.id ? (
@@ -3733,31 +3745,6 @@ export function PracticeScreen() {
         </button>
       </div>
 
-      {/* Edit Mode FAB */}
-      <button
-        onClick={toggleEditMode}
-        className={`fixed z-40 shadow-xl transition-all active:scale-95 ${
-          isEditMode
-            ? 'bottom-[152px] right-3 flex items-center gap-2 px-4 py-2.5 rounded-full bg-accent text-white font-medium text-sm'
-            : 'bottom-[152px] right-3 w-11 h-11 rounded-full flex items-center justify-center bg-bg-elevated border border-border/50 text-text-muted'
-        }`}
-      >
-        {isEditMode ? (
-          <>
-            <IconCheck size={16} />
-            <span>Done</span>
-          </>
-        ) : (
-          <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-        )}
-      </button>
-
-      {/* Edit mode banner */}
-      {isEditMode && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-accent/90 backdrop-blur text-white text-center py-1.5 text-xs font-medium tracking-wide">
-          EDIT MODE — tap line to edit, arrows to reorder
-        </div>
-      )}
 
       {/* Edit Modal */}
       <EditModal
