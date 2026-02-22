@@ -1730,12 +1730,7 @@ export function PracticeScreen() {
       }
     })
 
-    // Judge immediately using Deepgram transcript (no Whisper delay)
-    finishListeningWithTranscript(spoken)
-  }, [currentLine, settings.autoAdvanceOnCorrect, settings.autoAdvanceDelay, settings.autoRepeatOnWrong, settings.repeatFullLineTimes, settings.restartOnFail, settings.repeatFullLineOnFail, settings.strictMode, learningMode, segments, currentSegmentIndex, lastCheckpoint, consecutiveWrongs, consecutiveLineFails, fullLineCompletions])
-
-  // Extracted judgment logic — called after Whisper (or Deepgram fallback) returns
-  const finishListeningWithTranscript = useCallback((spoken: string) => {
+    // Judge immediately using Deepgram transcript
     // Calculate pacing comparison
     const userDuration = speechStartTimeRef.current > 0 ? Date.now() - speechStartTimeRef.current : 0
     const targetDuration = targetDurationRef.current
