@@ -3,12 +3,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, PanInfo } from 'framer-motion'
 import { useStore, useSettings, useScriptPractice } from '@/store'
-import { checkAccuracy, getLockedWordMatch, createFreshLockedState, LockedWordState, getWordByWordResults } from '@/lib/accuracy'
+import { checkAccuracy, getSubsequenceWordMatch, getWordByWordResults } from '@/lib/accuracy'
 import { Card, Button, ProgressBar } from './ui'
 import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMic, IconCheck, IconLoop, IconSettings } from './icons'
 import { EditModal, updateLine, updateCharacter, updateScript, deleteLine, addLine } from './EditModal'
 import { supabase, getAuthHeaders } from '@/lib/supabase'
-import { useOpenAIRealtime } from '@/hooks/useOpenAIRealtime'
+import { useDeepgram } from '@/hooks/useDeepgram'
 import { triggerAchievementCheck } from '@/hooks/useAchievements'
 
 import { audioManager, playTone as audioPlayTone } from '@/lib/audioManager'
@@ -205,12 +205,12 @@ export function PracticeScreen() {
   const finishListeningRef = useRef<() => void>(() => {})
   const countdownRef = useRef<NodeJS.Timeout | null>(null)
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const commitTimerRef = useRef<NodeJS.Timeout | null>(null) // Timer for commit accumulation
+  const isCheckingWhisperRef = useRef(false) // True during Whisper batch call
   const lastSpeechRef = useRef<number>(Date.now())
-  const committedTextRef = useRef<string>('') // Accumulate committed transcripts locally
+  const deepgramFinalTextRef = useRef<string>('') // Accumulate Deepgram final transcripts
   const linesContainerRef = useRef<HTMLDivElement>(null) // For auto-scrolling to current line
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map()) // Track line elements by index
-  const lockedStateRef = useRef<LockedWordState>(createFreshLockedState()) // Word locking state
+  const matchedIndicesRef = useRef<Set<number>>(new Set()) // Subsequence-matched word indices
   const accumulatedAudioRef = useRef<number>(0) // Accumulated audio energy for word animation
   const wordAnimationRef = useRef<NodeJS.Timeout | null>(null) // Timer for word animation
   const reconnectRef = useRef<(() => Promise<void>) | null>(null) // For auto-reconnect on disconnect
@@ -239,94 +239,75 @@ export function PracticeScreen() {
     return names
   }, [characters])
 
-  // OpenAI Realtime uses updatePrompt() per-line — no keyterms needed
+  // Deepgram Nova-3 streaming STT with subsequence matching for real-time feedback
 
-  // OpenAI Realtime - STT with prompt-based word biasing
-  const stt = useOpenAIRealtime({
+  const stt = useDeepgram({
     onPartialTranscript: (data) => {
       if (!listeningRef.current) return
-      // Ignore non-speech events
-      if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
-      // Reject stale/hallucinated results during settling period
-      if (Date.now() - listenSessionRef.current < 800) return
-      console.log('[STT] Partial:', JSON.stringify(data.text), 'committed so far:', JSON.stringify(committedTextRef.current))
+      if (!data.text.trim()) return
+      // Reject stale results during settling period
+      if (Date.now() - listenSessionRef.current < 500) return
 
       // Track cue pickup speed: first speech after AI finished
-      const isFirstSpeech = !transcriptRef.current.trim() && !committedTextRef.current.trim()
+      const isFirstSpeech = !transcriptRef.current.trim() && !deepgramFinalTextRef.current.trim()
       if (isFirstSpeech && aiFinishTimeRef.current > 0) {
         speechStartTimeRef.current = Date.now()
         const pickupMs = Date.now() - aiFinishTimeRef.current
         setLastPickupTime(pickupMs)
-        // Store per-line
-        const lineId = expectedLineRef.current // use expected text as key proxy
+        const lineId = expectedLineRef.current
         const existing = linePickupTimesRef.current.get(lineId) || []
         existing.push(pickupMs)
         linePickupTimesRef.current.set(lineId, existing)
       }
 
-      const fullText = committedTextRef.current
-        ? committedTextRef.current + ' ' + data.text
+      // Combine accumulated finals + current partial
+      const fullText = deepgramFinalTextRef.current
+        ? deepgramFinalTextRef.current + ' ' + data.text
         : data.text
       setTranscript(fullText)
       transcriptRef.current = fullText
       lastSpeechRef.current = Date.now()
-      
-      // Use word-locking to prevent STT from "changing" already-matched words
-      const newState = getLockedWordMatch(expectedLineRef.current, fullText, lockedStateRef.current, characterNameSet)
-      lockedStateRef.current = newState
-      console.log('[STT] Word match - locked:', newState.lockedCount, 'hasError:', newState.hasError, 'expected:', expectedLineRef.current)
-      setMatchedWordCount(newState.lockedCount)
-      setHasError(newState.hasError)
+
+      // Subsequence match for green word highlighting (allows gaps)
+      const result = getSubsequenceWordMatch(expectedLineRef.current, fullText, characterNameSet)
+      matchedIndicesRef.current = result.matchedIndices
+      setMatchedWordCount(result.matchedCount)
     },
     onCommittedTranscript: (data) => {
       if (!listeningRef.current) return
-      // Ignore non-speech commits
-      if (/^\s*\([^)]+\)\s*$/.test(data.text) || !data.text.trim()) return
-      // Reject stale/hallucinated results — STT may send delayed finals after
-      // pause+restart, or Whisper may hallucinate the prompt text from near-empty
-      // audio. Real speech takes 1-2s+ to speak and commit.
-      if (Date.now() - listenSessionRef.current < 800) {
-        console.log('[STT] Discarding early committed result (settling):', data.text)
-        return
-      }
-      console.log('[STT] Committed:', JSON.stringify(data.text), 'prev committed:', JSON.stringify(committedTextRef.current))
-      // Accumulate committed transcripts
-      committedTextRef.current = committedTextRef.current
-        ? committedTextRef.current + ' ' + data.text
+      if (!data.text.trim()) return
+      if (Date.now() - listenSessionRef.current < 500) return
+
+      // Accumulate final transcripts
+      deepgramFinalTextRef.current = deepgramFinalTextRef.current
+        ? deepgramFinalTextRef.current + ' ' + data.text
         : data.text
-      console.log('[STT] Full transcript now:', JSON.stringify(committedTextRef.current), 'expected:', JSON.stringify(expectedLineRef.current))
-      setTranscript(committedTextRef.current)
-      transcriptRef.current = committedTextRef.current
+      setTranscript(deepgramFinalTextRef.current)
+      transcriptRef.current = deepgramFinalTextRef.current
       lastSpeechRef.current = Date.now()
 
-      // Update word-locking state with committed text
-      const newState = getLockedWordMatch(expectedLineRef.current, committedTextRef.current, lockedStateRef.current, characterNameSet)
-      lockedStateRef.current = newState
-      console.log('[STT] Word lock: locked', newState.lockedCount, '/', expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length, 'hasError:', newState.hasError)
-      setMatchedWordCount(newState.lockedCount)
-      setHasError(newState.hasError)
+      // Update subsequence match with finals
+      const result = getSubsequenceWordMatch(expectedLineRef.current, deepgramFinalTextRef.current, characterNameSet)
+      matchedIndicesRef.current = result.matchedIndices
+      setMatchedWordCount(result.matchedCount)
 
-      // Check if user has said ALL words - auto-finish if 100% complete
-      const expectedWordCount = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
-      if (newState.lockedCount >= expectedWordCount && listeningRef.current) {
-        console.log('[STT] All words matched, auto-finishing')
+      // Auto-finish if coverage >= 100%
+      if (result.coverage >= 1.0 && listeningRef.current) {
+        console.log('[STT] Full coverage reached, auto-finishing')
         finishListeningRef.current()
       }
     },
     onSessionStarted: () => {
-      console.log('[STT] Session started')
+      console.log('[STT] Deepgram session started')
       setMicReady(true)
-      // Only reset to idle if not actively listening (startSession can be called
-      // as a reconnect fallback inside startListening — don't clobber 'listening' status)
       if (!listeningRef.current) setStatus('idle')
     },
     onError: (error) => {
-      console.error('[STT] Error:', error)
+      console.error('[STT] Deepgram error:', error)
     },
     onDisconnect: () => {
-      console.log('[STT] Disconnected')
+      console.log('[STT] Deepgram disconnected')
       setMicReady(false)
-      // Auto-reconnect if we were in the middle of practice
       if (isPlayingRef.current && reconnectRef.current) {
         console.log('[STT] Reconnecting due to unexpected disconnect...')
         setTimeout(() => {
@@ -338,10 +319,8 @@ export function PracticeScreen() {
     },
     onAudioLevel: (level) => {
       setAudioLevel(level)
-      // Accumulate audio energy when speaking (level > threshold)
       if (level > 0.08 && listeningRef.current) {
         accumulatedAudioRef.current += level
-        // Advance word every ~0.6 accumulated energy (~3-4 words/sec at normal speaking)
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const newWordIndex = Math.min(
           Math.floor(accumulatedAudioRef.current / 0.6),
@@ -530,27 +509,27 @@ export function PracticeScreen() {
     stt.stopSession()    // Then disconnect
     if (countdownRef.current) clearInterval(countdownRef.current)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
     setMicReady(false)
   }
 
   const connectMic = async () => {
     setStatus('connecting')
     try {
-      console.log('[STT] Starting session (audio paused until listening)...')
+      console.log('[STT] Starting Deepgram session (audio paused until listening)...')
 
-      // OpenAI Realtime - connect (no params needed, prompt set per-line via updatePrompt)
-      const success = await stt.startSession()
+      // Build keyterms from character names for Deepgram keyword boosting
+      const keyterms = Array.from(characterNameSet)
+      const success = await stt.startSession(keyterms)
       if (!success) {
         throw new Error('Failed to connect')
       }
-      
-      console.log('[STT] Session connected (audio paused)')
-      
-    } catch (e) { 
+
+      console.log('[STT] Deepgram session connected (audio paused)')
+
+    } catch (e) {
       console.error('[STT] Failed to connect:', e)
       setStatus('idle')
-      setIsPlaying(false) 
+      setIsPlaying(false)
     }
   }
 
@@ -1189,13 +1168,9 @@ export function PracticeScreen() {
       clearInterval(silenceTimerRef.current)
       silenceTimerRef.current = null
     }
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current)
-      commitTimerRef.current = null
-    }
-    if (audioRef.current) { 
+    if (audioRef.current) {
       audioRef.current.pause()
-      audioRef.current.currentTime = 0 
+      audioRef.current.currentTime = 0
     }
     setStatus('idle')
     setTranscript('')
@@ -1496,8 +1471,8 @@ export function PracticeScreen() {
     // Increment session nonce to invalidate any pending transcripts from previous session
     listenSessionRef.current = Date.now()
     transcriptRef.current = ''
-    committedTextRef.current = ''
-    lockedStateRef.current = createFreshLockedState()
+    deepgramFinalTextRef.current = ''
+    matchedIndicesRef.current = new Set()
     expectedLineRef.current = expectedText
     setTranscript('')
     setMissingWords([])
@@ -1514,14 +1489,16 @@ export function PracticeScreen() {
     // Show "connecting" until audio is actually flowing
     setStatus('connecting')
 
-    // Update prompt to bias toward expected words (instant, no reconnect)
-    stt.updatePrompt(expectedLineRef.current)
+    // Update Deepgram keyterms for expected line words (~200ms reconnect)
+    const lineWords = expectedText.split(/\s+/).filter(w => w.length > 2).slice(0, 15)
+    const keyterms = [...Array.from(characterNameSet), ...lineWords]
+    stt.updateKeyterms(keyterms)
 
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await stt.startSession()
+      await stt.startSession(keyterms)
       started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1616,8 +1593,8 @@ export function PracticeScreen() {
     // Increment session nonce to invalidate any pending transcripts from previous session
     listenSessionRef.current = Date.now()
     transcriptRef.current = '';
-    committedTextRef.current = '';
-    lockedStateRef.current = createFreshLockedState();
+    deepgramFinalTextRef.current = '';
+    matchedIndicesRef.current = new Set();
     expectedLineRef.current = stripParentheticals(currentLine?.content || '');
     setTranscript('');
     setMissingWords([]);
@@ -1630,18 +1607,19 @@ export function PracticeScreen() {
     setWordResults([])
     listeningRef.current = true;
 
-    // Show "connecting" while we ensure STT is ready — don't show "listening"
-    // until audio is actually being captured (prevents lost first words)
+    // Show "connecting" while we ensure STT is ready
     setStatus('connecting');
 
-    // Update prompt to bias toward expected words (instant, no reconnect)
-    stt.updatePrompt(expectedLineRef.current)
+    // Update Deepgram keyterms for expected line words (~200ms reconnect)
+    const lineWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 2).slice(0, 15)
+    const keyterms = [...Array.from(characterNameSet), ...lineWords]
+    stt.updateKeyterms(keyterms)
 
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await stt.startSession()
+      await stt.startSession(keyterms)
       started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1694,16 +1672,16 @@ export function PracticeScreen() {
       }
     }, 250)
   }
-  const startListeningForSegment = async (segment: string) => { 
-    transcriptRef.current = ''; 
-    committedTextRef.current = ''; 
-    lockedStateRef.current = createFreshLockedState();
-    expectedLineRef.current = segment; 
-    setTranscript(''); 
-    setMissingWords([]); 
-    setWrongWords([]); 
-    setMatchedWordCount(0); 
-    setHasError(false); 
+  const startListeningForSegment = async (segment: string) => {
+    transcriptRef.current = '';
+    deepgramFinalTextRef.current = '';
+    matchedIndicesRef.current = new Set();
+    expectedLineRef.current = segment;
+    setTranscript('');
+    setMissingWords([]);
+    setWrongWords([]);
+    setMatchedWordCount(0);
+    setHasError(false);
     // Reset word animation and results
     accumulatedAudioRef.current = 0
     setAnimatedWordIndex(0)
@@ -1712,14 +1690,16 @@ export function PracticeScreen() {
     lastSpeechRef.current = Date.now();
     setStatus('listening');
 
-    // Update prompt to bias toward expected words (instant, no reconnect)
-    stt.updatePrompt(expectedLineRef.current)
+    // Update Deepgram keyterms for segment words
+    const lineWords = segment.split(/\s+/).filter(w => w.length > 2).slice(0, 15)
+    const keyterms = [...Array.from(characterNameSet), ...lineWords]
+    stt.updateKeyterms(keyterms)
 
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await stt.startSession()
+      await stt.startSession(keyterms)
       started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1761,21 +1741,51 @@ export function PracticeScreen() {
     // CRITICAL: Stop sending audio to STT immediately (billing stops)
     stt.pauseListening()
 
-    // Stop recording and store blob for playback
-    stt.stopRecording().then(blob => {
+    if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
+
+    // Capture Deepgram transcript before async Whisper call
+    const deepgramSpoken = transcriptRef.current.trim()
+
+    // Stop recording → get audio blob → send to Whisper for accurate judgment
+    stt.stopRecording().then(async (blob) => {
       if (blob && blob.size > 0) {
         lastRecordingRef.current = blob
         setHasRecording(true)
       } else {
         setHasRecording(false)
       }
+
+      // Try Whisper batch transcription for accurate judgment
+      let spoken = deepgramSpoken
+      if (blob && blob.size > 1024 && deepgramSpoken) {
+        try {
+          isCheckingWhisperRef.current = true
+          const form = new FormData()
+          form.append('audio', blob, 'audio.webm')
+          // Send expected text as prompt to bias Whisper toward correct vocabulary
+          form.append('prompt', expectedLineRef.current.slice(0, 800))
+          const res = await fetch('/api/whisper-transcribe', { method: 'POST', body: form })
+          if (res.ok) {
+            const data = await res.json()
+            if (data.transcript && data.transcript.trim()) {
+              console.log('[Whisper] Got transcript:', JSON.stringify(data.transcript), '(Deepgram was:', JSON.stringify(deepgramSpoken) + ')')
+              spoken = data.transcript.trim()
+            }
+          }
+        } catch (e) {
+          console.warn('[Whisper] Batch transcription failed, using Deepgram transcript:', e)
+        } finally {
+          isCheckingWhisperRef.current = false
+        }
+      }
+
+      // Continue with judgment using the best available transcript
+      finishListeningWithTranscript(spoken)
     })
+  }, [currentLine, settings.autoAdvanceOnCorrect, settings.autoAdvanceDelay, settings.autoRepeatOnWrong, settings.repeatFullLineTimes, settings.restartOnFail, settings.repeatFullLineOnFail, settings.strictMode, learningMode, segments, currentSegmentIndex, lastCheckpoint, consecutiveWrongs, consecutiveLineFails, fullLineCompletions])
 
-    if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
-    
-    const spoken = transcriptRef.current.trim()
-
+  // Extracted judgment logic — called after Whisper (or Deepgram fallback) returns
+  const finishListeningWithTranscript = useCallback((spoken: string) => {
     // Calculate pacing comparison
     const userDuration = speechStartTimeRef.current > 0 ? Date.now() - speechStartTimeRef.current : 0
     const targetDuration = targetDurationRef.current
@@ -1790,7 +1800,7 @@ export function PracticeScreen() {
     const segs = segmentsRef.current
     const segIdx = currentSegmentIndexRef.current
 
-    console.log('[finishListening] spoken:', JSON.stringify(spoken), 'expected:', JSON.stringify(expectedLineRef.current), 'committed:', JSON.stringify(committedTextRef.current), 'segIdx:', segIdx, 'segs.length:', segs.length)
+    console.log('[finishListening] spoken:', JSON.stringify(spoken), 'expected:', JSON.stringify(expectedLineRef.current), 'deepgramFinal:', JSON.stringify(deepgramFinalTextRef.current), 'segIdx:', segIdx, 'segs.length:', segs.length)
     
     if (!spoken || !currentLine) {
       playIncorrect()
@@ -2112,10 +2122,6 @@ export function PracticeScreen() {
     if (silenceTimerRef.current) {
       clearInterval(silenceTimerRef.current)
       silenceTimerRef.current = null
-    }
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current)
-      commitTimerRef.current = null
     }
     setStatus('idle')
     busyRef.current = false
@@ -3019,11 +3025,9 @@ export function PracticeScreen() {
                               colorClass = 'text-warning/70 underline decoration-warning/50'
                             }
                           } else if (status === 'listening') {
-                            // While listening: animate gray → white → green
-                            if (currentWordIndex < matchedWordCount) {
+                            // While listening: animate gray → white → green (subsequence matching)
+                            if (matchedIndicesRef.current.has(currentWordIndex)) {
                               colorClass = 'text-success'
-                            } else if (hasError && currentWordIndex === matchedWordCount) {
-                              colorClass = 'text-error underline decoration-error'
                             } else if (isAnimated) {
                               colorClass = 'text-text'
                             }
@@ -3439,7 +3443,7 @@ export function PracticeScreen() {
               setShowWaitingNudge(false)
               stt.pauseListening()
               if (silenceTimerRef.current) { clearInterval(silenceTimerRef.current); silenceTimerRef.current = null }
-              if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null }
+              // commitTimerRef removed (no longer needed with Deepgram)
             }
             busyRef.current = false
             if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0 }

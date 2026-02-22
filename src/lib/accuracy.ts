@@ -580,6 +580,135 @@ export function getRealtimeWordMatch(expected: string, spoken: string, character
 }
 
 // ============================================================================
+// SUBSEQUENCE MATCHING (for Deepgram streaming real-time highlighting)
+// Uses LCS to find best mapping — allows gaps without stopping
+// ============================================================================
+
+export interface SubsequenceMatchResult {
+  matchedIndices: Set<number>  // Indices into expected words that matched
+  matchedCount: number
+  coverage: number             // 0-1 ratio of matched / effective expected words
+}
+
+/**
+ * Subsequence word match using Longest Common Subsequence (LCS).
+ * Unlike sequential locking, this allows gaps — word 4 being wrong
+ * doesn't prevent words 5-10 from turning green.
+ *
+ * @param expected - The expected line from the script
+ * @param spoken - Accumulated transcript from Deepgram (finals + partial)
+ * @param characterNames - Optional set of character names for fuzzy matching
+ * @returns Set of matched expected-word indices + coverage ratio
+ */
+export function getSubsequenceWordMatch(
+  expected: string,
+  spoken: string,
+  characterNames?: Set<string>
+): SubsequenceMatchResult {
+  const processedExpected = preprocessStutters(expected)
+  const expectedWordsWithOrig = getWordsWithOriginal(processedExpected)
+  const expectedWords = expectedWordsWithOrig.map(w => w.normalized)
+  const spokenWords = getWords(spoken)
+
+  const matchedIndices = new Set<number>()
+
+  // Auto-match skippable script words and stutters
+  let skippedCount = 0
+  for (let i = 0; i < expectedWords.length; i++) {
+    const w = expectedWords[i]
+    if (SKIPPABLE_SCRIPT_WORDS.includes(w)) {
+      matchedIndices.add(i)
+      skippedCount++
+    } else if (i > 0 && w === expectedWords[i - 1]) {
+      // Stutter repeat — auto-match
+      matchedIndices.add(i)
+      skippedCount++
+    }
+  }
+
+  if (spokenWords.length === 0) {
+    const effectiveCount = expectedWords.length - skippedCount
+    return {
+      matchedIndices,
+      matchedCount: 0,
+      coverage: effectiveCount > 0 ? 0 : 1,
+    }
+  }
+
+  // Filter to only non-skipped expected words for LCS
+  const expIndices: number[] = [] // Maps LCS row → original expected index
+  for (let i = 0; i < expectedWords.length; i++) {
+    if (!matchedIndices.has(i)) {
+      expIndices.push(i)
+    }
+  }
+
+  // Filter out filler words from spoken
+  const filteredSpoken: string[] = []
+  for (const w of spokenWords) {
+    if (!FILLER_WORDS.includes(w)) {
+      filteredSpoken.push(w)
+    }
+  }
+
+  const m = expIndices.length
+  const n = filteredSpoken.length
+
+  if (m === 0) {
+    return { matchedIndices, matchedCount: 0, coverage: 1 }
+  }
+  if (n === 0) {
+    return { matchedIndices, matchedCount: 0, coverage: 0 }
+  }
+
+  // Build match matrix (boolean: do these words match?)
+  // Then run LCS with backtracking
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+
+  for (let i = 1; i <= m; i++) {
+    const ei = expIndices[i - 1]
+    const expWord = expectedWords[ei]
+    const expOrig = expectedWordsWithOrig[ei].original
+    const isFirst = ei === 0
+    for (let j = 1; j <= n; j++) {
+      if (wordsMatch(expWord, filteredSpoken[j - 1], expOrig, isFirst, characterNames)) {
+        dp[i][j] = dp[i - 1][j - 1] + 1
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+      }
+    }
+  }
+
+  // Backtrack to find which expected indices matched
+  let i = m, j = n
+  while (i > 0 && j > 0) {
+    const ei = expIndices[i - 1]
+    const expWord = expectedWords[ei]
+    const expOrig = expectedWordsWithOrig[ei].original
+    const isFirst = ei === 0
+    if (wordsMatch(expWord, filteredSpoken[j - 1], expOrig, isFirst, characterNames)) {
+      matchedIndices.add(ei)
+      i--
+      j--
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--
+    } else {
+      j--
+    }
+  }
+
+  const realMatched = matchedIndices.size - skippedCount
+  const effectiveCount = expectedWords.length - skippedCount
+  const coverage = effectiveCount > 0 ? realMatched / effectiveCount : 1
+
+  return {
+    matchedIndices,
+    matchedCount: realMatched,
+    coverage,
+  }
+}
+
+// ============================================================================
 // WORD-LOCKING REAL-TIME MATCHING
 // Prevents STT from "un-matching" words by re-transcribing them
 // ============================================================================
