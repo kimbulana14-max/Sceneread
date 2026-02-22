@@ -319,17 +319,6 @@ export function PracticeScreen() {
     },
     onAudioLevel: (level) => {
       setAudioLevel(level)
-      if (level > 0.08 && listeningRef.current) {
-        accumulatedAudioRef.current += level
-        const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
-        const newWordIndex = Math.min(
-          Math.floor(accumulatedAudioRef.current / 0.6),
-          expectedWords
-        )
-        if (newWordIndex > animatedWordIndex) {
-          setAnimatedWordIndex(newWordIndex)
-        }
-      }
     },
   })
   
@@ -2938,12 +2927,9 @@ export function PracticeScreen() {
                       const builtText = segments.slice(0, buildProgress).join(' ')
                       const builtWordCount = builtText ? builtText.split(/\s+/).length : 0
                       
-                      // Word coloring logic:
-                      // - While listening: words go gray → white (animated) → green (matched by transcript)
-                      // - After result: green for correct, red for errors
+                      // Word coloring: gray (default) → green (matched by transcript) → red/yellow (after eval)
                       const isShowingResult = status === 'correct' || status === 'wrong'
                       const greenWordCount = isShowingResult ? matchedWordCount : (status === 'listening' ? matchedWordCount : builtWordCount)
-                      const whiteWordCount = status === 'listening' ? animatedWordIndex : 0
                       
                       let spokenWordIndex = 0 // Track spoken words only (excluding parentheticals)
                       
@@ -2967,7 +2953,6 @@ export function PracticeScreen() {
                           spokenWordIndex++ // Increment for next spoken word
                           
                           const isBuilt = currentWordIndex < builtWordCount
-                          const isAnimated = currentWordIndex < whiteWordCount
                           
                           // Use word-by-word results when showing wrong status
                           const wordResult = wordResults[currentWordIndex]
@@ -2986,11 +2971,9 @@ export function PracticeScreen() {
                               colorClass = 'text-warning/70 underline decoration-warning/50'
                             }
                           } else if (status === 'listening') {
-                            // While listening: animate gray → white → green (subsequence matching)
+                            // While listening: gray → green only (subsequence matching)
                             if (matchedIndicesRef.current.has(currentWordIndex)) {
                               colorClass = 'text-success'
-                            } else if (isAnimated) {
-                              colorClass = 'text-text'
                             }
                           } else if (status === 'correct') {
                             colorClass = 'text-success'
