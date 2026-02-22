@@ -1489,16 +1489,11 @@ export function PracticeScreen() {
     // Show "connecting" until audio is actually flowing
     setStatus('connecting')
 
-    // Update Deepgram keyterms for expected line words (~200ms reconnect)
-    const lineWords = expectedText.split(/\s+/).filter(w => w.length > 2).slice(0, 15)
-    const keyterms = [...Array.from(characterNameSet), ...lineWords]
-    stt.updateKeyterms(keyterms)
-
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await stt.startSession(keyterms)
+      await stt.startSession(Array.from(characterNameSet))
       started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1610,16 +1605,11 @@ export function PracticeScreen() {
     // Show "connecting" while we ensure STT is ready
     setStatus('connecting');
 
-    // Update Deepgram keyterms for expected line words (~200ms reconnect)
-    const lineWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 2).slice(0, 15)
-    const keyterms = [...Array.from(characterNameSet), ...lineWords]
-    stt.updateKeyterms(keyterms)
-
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await stt.startSession(keyterms)
+      await stt.startSession(Array.from(characterNameSet))
       started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1691,15 +1681,11 @@ export function PracticeScreen() {
     setStatus('listening');
 
     // Update Deepgram keyterms for segment words
-    const lineWords = segment.split(/\s+/).filter(w => w.length > 2).slice(0, 15)
-    const keyterms = [...Array.from(characterNameSet), ...lineWords]
-    stt.updateKeyterms(keyterms)
-
     // Start sending audio — if connection died, reconnect first
     let started = stt.startListening()
     if (!started) {
       console.log('[STT] Connection lost, reconnecting...')
-      await stt.startSession(keyterms)
+      await stt.startSession(Array.from(characterNameSet))
       started = stt.startListening()
       if (!started) {
         console.error('[STT] Failed to start listening after reconnect')
@@ -1743,45 +1729,20 @@ export function PracticeScreen() {
 
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
 
-    // Capture Deepgram transcript before async Whisper call
-    const deepgramSpoken = transcriptRef.current.trim()
+    const spoken = transcriptRef.current.trim()
 
-    // Stop recording → get audio blob → send to Whisper for accurate judgment
-    stt.stopRecording().then(async (blob) => {
+    // Stop recording — store blob for playback (non-blocking)
+    stt.stopRecording().then(blob => {
       if (blob && blob.size > 0) {
         lastRecordingRef.current = blob
         setHasRecording(true)
       } else {
         setHasRecording(false)
       }
-
-      // Try Whisper batch transcription for accurate judgment
-      let spoken = deepgramSpoken
-      if (blob && blob.size > 1024 && deepgramSpoken) {
-        try {
-          isCheckingWhisperRef.current = true
-          const form = new FormData()
-          form.append('audio', blob, 'audio.webm')
-          // Send expected text as prompt to bias Whisper toward correct vocabulary
-          form.append('prompt', expectedLineRef.current.slice(0, 800))
-          const res = await fetch('/api/whisper-transcribe', { method: 'POST', body: form })
-          if (res.ok) {
-            const data = await res.json()
-            if (data.transcript && data.transcript.trim()) {
-              console.log('[Whisper] Got transcript:', JSON.stringify(data.transcript), '(Deepgram was:', JSON.stringify(deepgramSpoken) + ')')
-              spoken = data.transcript.trim()
-            }
-          }
-        } catch (e) {
-          console.warn('[Whisper] Batch transcription failed, using Deepgram transcript:', e)
-        } finally {
-          isCheckingWhisperRef.current = false
-        }
-      }
-
-      // Continue with judgment using the best available transcript
-      finishListeningWithTranscript(spoken)
     })
+
+    // Judge immediately using Deepgram transcript (no Whisper delay)
+    finishListeningWithTranscript(spoken)
   }, [currentLine, settings.autoAdvanceOnCorrect, settings.autoAdvanceDelay, settings.autoRepeatOnWrong, settings.repeatFullLineTimes, settings.restartOnFail, settings.repeatFullLineOnFail, settings.strictMode, learningMode, segments, currentSegmentIndex, lastCheckpoint, consecutiveWrongs, consecutiveLineFails, fullLineCompletions])
 
   // Extracted judgment logic — called after Whisper (or Deepgram fallback) returns
