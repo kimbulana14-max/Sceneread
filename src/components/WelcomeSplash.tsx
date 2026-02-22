@@ -90,8 +90,8 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('reveal'), 400)
     const t2 = setTimeout(() => setPhase('greeting'), 1000)
-    const t3 = setTimeout(() => setPhase('exit'), 3800)
-    const t4 = setTimeout(() => onCompleteRef.current(), 4400)
+    const t3 = setTimeout(() => setPhase('exit'), 4800)
+    const t4 = setTimeout(() => onCompleteRef.current(), 5400)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
   }, [])
 

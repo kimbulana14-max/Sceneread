@@ -395,7 +395,8 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
           <motion.button
             whileTap={{ scale: 0.98 }}
             onClick={() => handleContinuePractice(lastScript)}
-            className="w-full p-4 bg-gradient-to-r from-accent/10 to-accent/5 rounded-xl transition-all text-left"
+            className="w-full p-4 rounded-xl transition-all text-left border border-ai/20"
+            style={{ background: 'var(--ai-muted)' }}
           >
             {(() => {
               const state = getScriptState(lastScript.id)
@@ -403,8 +404,8 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
               const progress = state.completedLineIds.length
               return (
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
-                    <IconPlay size={28} className="text-accent ml-1" />
+                  <div className="w-14 h-14 rounded-xl bg-ai/20 flex items-center justify-center flex-shrink-0">
+                    <IconPlay size={28} className="text-ai ml-1" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-base font-medium text-text truncate">{lastScript.title}</div>
@@ -412,13 +413,13 @@ export function HomeScreen({ onCompleteOnboarding }: HomeScreenProps) {
                       {lastScript.user_role} · {lastScript.total_lines || 0} lines
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent font-medium">{modeLabel}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ai/20 text-ai font-medium">{modeLabel}</span>
                       {progress > 0 && (
                         <span className="text-[10px] text-text-subtle">{progress} lines done</span>
                       )}
                     </div>
                   </div>
-                  <svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-5 h-5 text-ai flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
