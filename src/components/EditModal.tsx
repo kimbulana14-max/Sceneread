@@ -862,13 +862,70 @@ export async function updateCharacter(characterId: string, updates: any): Promis
 
 export async function updateScript(scriptId: string, updates: any): Promise<boolean> {
   const headers = await getAuthHeaders()
-  
+
   const response = await fetch(
     `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/scripts?id=eq.${scriptId}`,
     {
       method: 'PATCH',
       headers: { ...headers, 'Prefer': 'return=minimal' },
       body: JSON.stringify(updates)
+    }
+  )
+  return response.ok
+}
+
+// === FOLDER CRUD ===
+
+export async function createFolder(folder: { user_id: string; name: string; color: string; sort_order: number }): Promise<any> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/folders`,
+    {
+      method: 'POST',
+      headers: { ...headers, 'Prefer': 'return=representation' },
+      body: JSON.stringify(folder)
+    }
+  )
+  if (response.ok) {
+    const data = await response.json()
+    return Array.isArray(data) ? data[0] : data
+  }
+  return null
+}
+
+export async function updateFolder(folderId: string, updates: { name?: string; color?: string; sort_order?: number }): Promise<boolean> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/folders?id=eq.${folderId}`,
+    {
+      method: 'PATCH',
+      headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify(updates)
+    }
+  )
+  return response.ok
+}
+
+export async function deleteFolder(folderId: string): Promise<boolean> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/folders?id=eq.${folderId}`,
+    {
+      method: 'DELETE',
+      headers
+    }
+  )
+  return response.ok
+}
+
+export async function moveScriptToFolder(scriptId: string, folderId: string | null): Promise<boolean> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/scripts?id=eq.${scriptId}`,
+    {
+      method: 'PATCH',
+      headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ folder_id: folderId })
     }
   )
   return response.ok

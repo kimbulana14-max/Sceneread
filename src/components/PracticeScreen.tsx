@@ -14,7 +14,7 @@ import { triggerAchievementCheck } from '@/hooks/useAchievements'
 import { audioManager, playTone as audioPlayTone } from '@/lib/audioManager'
 
 // Record a completed line to daily stats and update streak
-const recordLineCompletion = async (userId: string) => {
+const recordLineCompletion = async (userId: string, scriptId?: string) => {
   if (!userId) return
   
   try {
@@ -87,6 +87,15 @@ const recordLineCompletion = async (userId: string) => {
       }
     }
 
+    // Update script's updated_at so "Continue practising" shows the most recent
+    if (scriptId) {
+      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/scripts?id=eq.${scriptId}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ updated_at: new Date().toISOString() })
+      }).catch(() => {}) // Non-critical, don't fail the whole function
+    }
+
     // Trigger achievement check after stats are updated
     setTimeout(() => triggerAchievementCheck(), 500)
   } catch (err) {
@@ -139,6 +148,155 @@ const transformText = (text: string, mode: 'full' | 'first-letter' | 'blurred' |
 
 type Status = 'idle' | 'ai' | 'narrator' | 'connecting' | 'listening' | 'correct' | 'wrong' | 'segment' | 'user-listen'
 type LearningMode = 'listen' | 'repeat' | 'practice'
+type InlineAddType = 'dialogue' | 'action' | 'transition' | 'narration'
+
+function InlineAddZone({ lineId, addingAfterLineId, setAddingAfterLineId, characters, onAdd }: {
+  lineId: string
+  addingAfterLineId: string | null
+  setAddingAfterLineId: (id: string | null) => void
+  characters: any[]
+  onAdd: (afterLineId: string, lineType: string, data: any) => Promise<void>
+}) {
+  const [selectedType, setSelectedType] = useState<InlineAddType | null>(null)
+  const [content, setContent] = useState('')
+  const [characterName, setCharacterName] = useState('')
+  const [isUserLine, setIsUserLine] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const isExpanded = addingAfterLineId === lineId
+
+  const resetForm = () => {
+    setSelectedType(null)
+    setContent('')
+    setCharacterName('')
+    setIsUserLine(false)
+  }
+
+  const handleCancel = () => {
+    resetForm()
+    setAddingAfterLineId(null)
+  }
+
+  const handleSubmit = async () => {
+    if (!content.trim() || !selectedType) return
+    if (selectedType === 'dialogue' && !characterName.trim()) return
+    setSaving(true)
+    await onAdd(lineId, selectedType, {
+      character_name: selectedType === 'dialogue' ? characterName.trim() : '',
+      content: content.trim(),
+      is_user_line: selectedType === 'dialogue' ? isUserLine : false,
+      emotion: 'neutral',
+    })
+    resetForm()
+    setSaving(false)
+  }
+
+  if (!isExpanded) {
+    return (
+      <div className="flex justify-center py-1">
+        <button
+          onClick={() => setAddingAfterLineId(lineId)}
+          className="w-6 h-6 rounded-full bg-overlay-10 hover:bg-accent/20 text-text-muted hover:text-accent flex items-center justify-center transition-colors"
+          title="Add line after"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="my-2 p-3 rounded-lg border border-accent/30 bg-accent/5">
+      {/* Type picker */}
+      {!selectedType ? (
+        <div className="space-y-2">
+          <div className="text-[10px] uppercase tracking-wide text-text-muted font-medium">Add line type</div>
+          <div className="flex flex-wrap gap-1.5">
+            {(['dialogue', 'action', 'transition', 'narration'] as InlineAddType[]).map(type => (
+              <button
+                key={type}
+                onClick={() => setSelectedType(type)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-bg-surface border border-border hover:border-accent hover:text-accent transition-colors capitalize"
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          <button onClick={handleCancel} className="text-xs text-text-muted hover:text-text transition-colors">Cancel</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] uppercase tracking-wide text-accent font-semibold capitalize">{selectedType}</span>
+            <button onClick={() => setSelectedType(null)} className="text-[10px] text-text-muted hover:text-text">(change)</button>
+          </div>
+
+          {/* Character field for dialogue */}
+          {selectedType === 'dialogue' && (
+            <div className="space-y-1.5">
+              {characters.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {characters.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setCharacterName(c.name); setIsUserLine(c.is_user_character || false) }}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
+                        characterName === c.name
+                          ? 'bg-accent text-white'
+                          : 'bg-bg-surface border border-border text-text-muted hover:text-text hover:border-accent'
+                      }`}
+                    >
+                      {c.name} {c.is_user_character ? '(You)' : ''}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <input
+                type="text"
+                value={characterName}
+                onChange={(e) => setCharacterName(e.target.value.toUpperCase())}
+                placeholder="Character name..."
+                className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-text font-mono uppercase focus:outline-none focus:border-accent"
+              />
+              <label className="flex items-center gap-2 text-xs text-text-muted">
+                <input
+                  type="checkbox"
+                  checked={isUserLine}
+                  onChange={(e) => setIsUserLine(e.target.checked)}
+                  className="w-3 h-3 rounded accent-accent"
+                />
+                My line
+              </label>
+            </div>
+          )}
+
+          {/* Content */}
+          <textarea
+            autoFocus
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder={selectedType === 'transition' ? 'CUT TO:' : `Enter ${selectedType} text...`}
+            rows={selectedType === 'transition' ? 1 : 2}
+            className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-text resize-none focus:outline-none focus:border-accent"
+          />
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <button onClick={handleCancel} className="px-3 py-1.5 text-xs text-text-muted hover:text-text border border-border rounded-lg transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving || !content.trim() || (selectedType === 'dialogue' && !characterName.trim())}
+              className="px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-40"
+            >
+              {saving ? 'Adding...' : 'Add'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function PracticeScreen() {
   const { user, currentScript, lines, characters, scenes, currentLineIndex, setCurrentLineIndex, isPlaying, setIsPlaying, practiceMode, setPracticeMode, setActiveTab } = useStore()
@@ -205,11 +363,20 @@ export function PracticeScreen() {
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null) // For mobile: single tap selects, double tap plays
   const lastTapRef = useRef<{ lineId: string; time: number } | null>(null) // For double tap detection
 
+  // Run-through mode state (quick recall pass over completed lines)
+  const [isRunThrough, setIsRunThrough] = useState(false)
+  const [runThroughReturnIndex, setRunThroughReturnIndex] = useState<number | null>(null)
+
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
-  
+  const [addingAfterLineId, setAddingAfterLineId] = useState<string | null>(null)
+  const isSplittingRef = useRef(false)
+
+  // Mount nonce: incremented on each mount, used to discard stale async callbacks
+  const mountNonceRef = useRef(0)
+
   // New mode states
   const audioRef = useRef<HTMLAudioElement>(null)
   const busyRef = useRef(false)
@@ -246,7 +413,9 @@ export function PracticeScreen() {
   const randomQueueRef = useRef<number[]>([]) // Shuffled user-line indices for random order
   const randomQueuePosRef = useRef<number>(0) // Current position in random queue
   const pendingRandomUserLineRef = useRef<number | null>(null) // Prevents double-random-jump after cue
-  
+  const isRunThroughRef = useRef(false)
+  const runThroughReturnIndexRef = useRef<number | null>(null)
+
   // Compute character names set for fuzzy matching (always-on for known names)
   const characterNameSet = useMemo(() => {
     const names = new Set<string>()
@@ -344,7 +513,9 @@ export function PracticeScreen() {
   useEffect(() => { segmentsRef.current = segments }, [segments])
   useEffect(() => { currentSegmentIndexRef.current = currentSegmentIndex }, [currentSegmentIndex])
   useEffect(() => { segmentCompletionsRef.current = segmentCompletions }, [segmentCompletions])
-  
+  useEffect(() => { isRunThroughRef.current = isRunThrough }, [isRunThrough])
+  useEffect(() => { runThroughReturnIndexRef.current = runThroughReturnIndex }, [runThroughReturnIndex])
+
   // Set up reconnect function for auto-reconnect on disconnect
   useEffect(() => {
     reconnectRef.current = async () => {
@@ -498,7 +669,21 @@ export function PracticeScreen() {
     }
   }, [isPlaying])
   
-  useEffect(() => { return () => cleanup() }, [])
+  // On mount: reset playback to clean state, increment nonce
+  // On unmount: stop everything and reset isPlaying so next mount starts clean
+  useEffect(() => {
+    mountNonceRef.current++
+    // Always start with a clean stopped state on mount
+    setIsPlaying(false)
+    isPlayingRef.current = false
+    busyRef.current = false
+    setStatus('idle')
+    return () => {
+      cleanup()
+      setIsPlaying(false)
+      isPlayingRef.current = false
+    }
+  }, [])
   useEffect(() => { resetStats() }, [currentScript?.id])
   useEffect(() => {
     if (isPlaying && status === 'idle' && currentLine && !busyRef.current) {
@@ -517,8 +702,15 @@ export function PracticeScreen() {
     stt.stopSession()    // Then disconnect
     if (countdownRef.current) clearInterval(countdownRef.current)
     if (silenceTimerRef.current) clearInterval(silenceTimerRef.current)
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
     setMicReady(false)
   }
+
+  // Helper: check if this async chain is still valid (component hasn't remounted)
+  const isStaleMount = (nonce: number) => nonce !== mountNonceRef.current
 
   const connectMic = async () => {
     setStatus('connecting')
@@ -564,6 +756,11 @@ export function PracticeScreen() {
     setFullLineCompletions(0)
     setShowStillThere(false)
     pendingRandomUserLineRef.current = null
+    // Clear run-through state
+    setIsRunThrough(false)
+    isRunThroughRef.current = false
+    setRunThroughReturnIndex(null)
+    runThroughReturnIndexRef.current = null
     // Clean up recording playback
     if (playbackAudioRef.current) {
       playbackAudioRef.current.pause()
@@ -607,8 +804,27 @@ export function PracticeScreen() {
     if (play) setTimeout(() => setIsPlaying(true), 10)
   }
   
+  // ============ RUN-THROUGH MODE ============
+
+  const startRunThrough = () => {
+    setRunThroughReturnIndex(currentLineIndex)
+    runThroughReturnIndexRef.current = currentLineIndex
+    setIsRunThrough(true)
+    isRunThroughRef.current = true
+    goTo(0, true)
+  }
+
+  const exitRunThrough = () => {
+    const returnIdx = runThroughReturnIndexRef.current ?? currentLineIndex
+    setIsRunThrough(false)
+    isRunThroughRef.current = false
+    setRunThroughReturnIndex(null)
+    runThroughReturnIndexRef.current = null
+    goTo(returnIdx, true)
+  }
+
   // ============ NEW MODE HELPERS ============
-  
+
   // Navigate to next scene
   const goToNextScene = () => {
     if (currentSceneIndex < scriptScenes.length - 1) {
@@ -682,6 +898,23 @@ export function PracticeScreen() {
   }
 
   const next = () => {
+    // Run-through mode: exit when reaching return index or an uncompleted user line
+    if (isRunThroughRef.current) {
+      const nextIdx = currentLineIndex + 1
+      const returnIdx = runThroughReturnIndexRef.current ?? playableLines.length
+      if (nextIdx >= returnIdx) {
+        exitRunThrough()
+        return
+      }
+      const nextLine = playableLines[nextIdx]
+      if (nextLine?.is_user_line && !stats.completed.has(nextLine.id)) {
+        exitRunThrough()
+        return
+      }
+      goTo(nextIdx, isPlayingRef.current)
+      return
+    }
+
     // If we just played a cue line for a pending random user line, go to that user line
     if (pendingRandomUserLineRef.current !== null) {
       const userIdx = pendingRandomUserLineRef.current
@@ -1192,7 +1425,8 @@ export function PracticeScreen() {
   }
 
   const playCurrentLine = async () => {
-    console.log('[Play] playCurrentLine called, currentLine:', currentLine?.id, 'busyRef:', busyRef.current, 'learningMode:', learningMode)
+    const nonce = mountNonceRef.current
+    console.log('[Play] playCurrentLine called, currentLine:', currentLine?.id, 'busyRef:', busyRef.current, 'learningMode:', learningMode, 'nonce:', nonce)
     if (!currentLine || busyRef.current) {
       console.log('[Play] Early return - no currentLine or busy')
       return
@@ -1208,7 +1442,65 @@ export function PracticeScreen() {
     
     // Repeat mode: Progressive build for user lines
     if (learningMode === 'repeat') {
-      console.log('[Play] In Repeat mode branch')
+      console.log('[Play] In Repeat mode branch, isRunThrough:', isRunThroughRef.current)
+
+      // ============ RUN-THROUGH SUB-MODE ============
+      if (isRunThroughRef.current) {
+        if (currentLine.is_user_line) {
+          if (stats.completed.has(currentLine.id)) {
+            // Completed user line: play full line TTS, then listen (strict, no segments)
+            const fullText = stripParentheticals(currentLine.content)
+            setStatus('segment')
+            if (currentLine.audio_url) {
+              await playAudio(currentLine.audio_url)
+            } else {
+              await playSegmentLiveTTS(fullText)
+            }
+            if (!isPlayingRef.current || isStaleMount(nonce)) { busyRef.current = false; return }
+
+            if (settings.waitForMeDelay > 0) {
+              await new Promise(r => setTimeout(r, settings.waitForMeDelay))
+              if (!isPlayingRef.current || isStaleMount(nonce)) { busyRef.current = false; return }
+            }
+
+            // Listen for full line with strict matching
+            aiFinishTimeRef.current = Date.now()
+            expectedLineRef.current = fullText
+            if (settings.autoStartRecording) {
+              startListeningForBuild(fullText)
+            } else {
+              pendingListenRef.current = () => startListeningForBuild(fullText)
+              setStatus('idle')
+            }
+            busyRef.current = false
+            return
+          } else {
+            // Uncompleted user line — exit run-through, resume normal repeat
+            exitRunThrough()
+            busyRef.current = false
+            return
+          }
+        } else {
+          // Partner/narrator line in run-through: play normally, then advance
+          setStatus(isNarrator ? 'narrator' : 'ai')
+          if (!isNarrator) {
+            const charVoice = characters.find(c => c.name === currentLine.character_name)?.voice_id
+            await speakCharacterName(currentLine.character_name, charVoice, currentLine.audio_url_name)
+            await speakParenthetical(currentLine.parenthetical, currentLine.audio_url_parenthetical)
+          }
+          if (currentLine.audio_url) {
+            await playAudio(currentLine.audio_url)
+          } else {
+            await playSegmentLiveTTS(currentLine.content)
+          }
+          setStatus('idle')
+          busyRef.current = false
+          if (isPlayingRef.current && !isStaleMount(nonce)) next()
+          return
+        }
+      }
+
+      // ============ NORMAL REPEAT MODE ============
       if (currentLine.is_user_line) {
         console.log('[Play] User line in Repeat mode')
         // Initialize segments if not already done
@@ -1234,12 +1526,12 @@ export function PracticeScreen() {
         setStatus('segment')
         await playSegmentLiveTTS(accumulatedText)
         
-        if (!isPlayingRef.current) { busyRef.current = false; return } // User paused during TTS
+        if (!isPlayingRef.current || isStaleMount(nonce)) { busyRef.current = false; return } // User paused during TTS or component remounted
 
         // Wait before listening (same as practice mode)
         if (settings.waitForMeDelay > 0) {
           await new Promise(r => setTimeout(r, settings.waitForMeDelay))
-          if (!isPlayingRef.current) { busyRef.current = false; return }
+          if (!isPlayingRef.current || isStaleMount(nonce)) { busyRef.current = false; return }
         }
 
         // Start listening with 3.5s silence timeout
@@ -1268,7 +1560,7 @@ export function PracticeScreen() {
         }
         setStatus('idle')
         busyRef.current = false
-        if (isPlayingRef.current) next()
+        if (isPlayingRef.current && !isStaleMount(nonce)) next()
         return
       }
     }
@@ -1284,7 +1576,7 @@ export function PracticeScreen() {
         }
         setStatus('idle')
         busyRef.current = false
-        if (isPlayingRef.current) next()
+        if (isPlayingRef.current && !isStaleMount(nonce)) next()
         return
       }
       
@@ -1320,7 +1612,7 @@ export function PracticeScreen() {
       }
       setStatus('idle')
       busyRef.current = false
-      if (isPlayingRef.current) next()
+      if (isPlayingRef.current && !isStaleMount(nonce)) next()
       return
     }
     
@@ -1342,7 +1634,7 @@ export function PracticeScreen() {
         }
         setStatus('idle')
         busyRef.current = false
-        if (isPlayingRef.current) next()
+        if (isPlayingRef.current && !isStaleMount(nonce)) next()
         return
       }
       
@@ -1374,7 +1666,7 @@ export function PracticeScreen() {
       // 'muted' — skip entirely, just advance
       setStatus('idle')
       busyRef.current = false
-      if (isPlayingRef.current) next()
+      if (isPlayingRef.current && !isStaleMount(nonce)) next()
     } else {
       setStatus('ai')
       const charVoice = characters.find(c => c.name === currentLine.character_name)?.voice_id
@@ -1389,7 +1681,7 @@ export function PracticeScreen() {
       }
       setStatus('idle')
       busyRef.current = false
-      if (isPlayingRef.current) next()
+      if (isPlayingRef.current && !isStaleMount(nonce)) next()
     }
   }
 
@@ -1775,7 +2067,8 @@ export function PracticeScreen() {
     // Only call Whisper if Deepgram would mark it wrong (saves ~1s on correct answers)
     let spoken = deepgramSpoken
     if (deepgramSpoken && expectedLineRef.current) {
-      const quickCheck = checkAccuracy(expectedLineRef.current, deepgramSpoken, settings.strictMode, characterNameSet)
+      const quickCheckStrict = isRunThroughRef.current ? true : settings.strictMode
+      const quickCheck = checkAccuracy(expectedLineRef.current, deepgramSpoken, quickCheckStrict, characterNameSet)
       if (!quickCheck.isCorrect && blob && blob.size > 1024) {
         // Deepgram says wrong — get Whisper's second opinion (prompt biases toward expected words)
         try {
@@ -1824,6 +2117,27 @@ export function PracticeScreen() {
       if (expectedLineRef.current) {
         const wordByWord = getWordByWordResults(expectedLineRef.current, spoken || '', characterNameSet)
         setWordResults(wordByWord.results)
+      }
+
+      // Run-through mode: empty transcript = wrong, replay line and retry
+      if (isRunThroughRef.current) {
+        setStatus('wrong')
+        const nonce = ++segmentNonceRef.current
+        setTimeout(async () => {
+          if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
+          setWordResults([])
+          setStatus('segment')
+          const fullText = expectedLineRef.current
+          if (currentLine?.audio_url) {
+            await playAudio(currentLine.audio_url)
+          } else {
+            await playSegmentLiveTTS(fullText)
+          }
+          if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
+          startListeningForBuild(fullText)
+          busyRef.current = false
+        }, 2000)
+        return
       }
 
       if (learningMode === 'repeat' && segs.length > 0) {
@@ -1884,7 +2198,8 @@ export function PracticeScreen() {
       return
     }
     
-    const result = checkAccuracy(expectedLineRef.current, spoken, settings.strictMode, characterNameSet)
+    const isStrict = isRunThroughRef.current ? true : settings.strictMode
+    const result = checkAccuracy(expectedLineRef.current, spoken, isStrict, characterNameSet)
     setTranscript(spoken)
     setMissingWords(result.missingWords)
     setWrongWords(result.wrongWords)
@@ -1911,7 +2226,15 @@ export function PracticeScreen() {
       // Reset consecutive wrongs on correct
       setConsecutiveWrongs(0)
       setConsecutiveLineFails(0)
-      
+
+      // Run-through mode: correct → play sound, advance
+      if (isRunThroughRef.current) {
+        if (settings.playSoundOnCorrect) playCorrect()
+        setStatus('correct')
+        setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, settings.autoAdvanceDelay)
+        return
+      }
+
       // Build mode: advance to next segment
       if (learningMode === 'repeat' && segs.length > 0) {
         const nextIndex = segIdx + 1
@@ -1970,7 +2293,7 @@ export function PracticeScreen() {
               markLineCompleted(scriptId, currentLine.id)
               saveRepeatProgress(scriptId, 0, 0) // Reset repeat progress
             }
-            recordLineCompletion(user?.id || '') // Track for streaks
+            recordLineCompletion(user?.id || '', scriptId) // Track for streaks
             setStatus('correct')
             setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, settings.autoAdvanceDelay)
           }
@@ -2023,7 +2346,7 @@ export function PracticeScreen() {
         recordAttempt(scriptId, true)
         markLineCompleted(scriptId, currentLine.id)
       }
-      recordLineCompletion(user?.id || '') // Track for streaks
+      recordLineCompletion(user?.id || '', scriptId) // Track for streaks
       if (settings.autoAdvanceOnCorrect) setTimeout(() => { setStatus('idle'); busyRef.current = false; next() }, settings.autoAdvanceDelay)
       else busyRef.current = false
     } else {
@@ -2047,6 +2370,27 @@ export function PracticeScreen() {
       // Speak error feedback via TTS (fire-and-forget, doesn't block flow)
       if (settings.speakErrorFeedback && errorMsg !== 'Try again') {
         playSegmentLiveTTS(errorMsg).catch(() => {})
+      }
+
+      // Run-through mode: wrong → show results, replay correct line, retry
+      if (isRunThroughRef.current) {
+        setStatus('wrong')
+        const nonce = ++segmentNonceRef.current
+        setTimeout(async () => {
+          if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
+          setWordResults([])
+          setStatus('segment')
+          const fullText = expectedLineRef.current
+          if (currentLine?.audio_url) {
+            await playAudio(currentLine.audio_url)
+          } else {
+            await playSegmentLiveTTS(fullText)
+          }
+          if (segmentNonceRef.current !== nonce || !isPlayingRef.current) return
+          startListeningForBuild(fullText)
+          busyRef.current = false
+        }, 2000)
+        return
       }
 
       if (learningMode === 'repeat' && segs.length > 0) {
@@ -2218,6 +2562,7 @@ export function PracticeScreen() {
       setIsEditMode(false)
       setEditingLineId(null)
       setEditingContent('')
+      setAddingAfterLineId(null)
     }
   }
 
@@ -2259,21 +2604,83 @@ export function PracticeScreen() {
       return l
     })
     useStore.getState().setLines(updatedLines.sort((a, b) => a.sort_order - b.sort_order))
-    // Persist
-    const headers = await getAuthHeaders()
-    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${lineA.id}`, {
-      method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ sort_order: sortB }),
-    }).catch(err => console.error('Failed to move line:', err))
-    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${lineB.id}`, {
-      method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ sort_order: sortA }),
-    }).catch(err => console.error('Failed to move line:', err))
+    // Persist — await both with rollback on failure
+    try {
+      const headers = await getAuthHeaders()
+      const [resA, resB] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${lineA.id}`, {
+          method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ sort_order: sortB }),
+        }),
+        fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lines?id=eq.${lineB.id}`, {
+          method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ sort_order: sortA }),
+        }),
+      ])
+      if (!resA.ok || !resB.ok) throw new Error('Move line PATCH failed')
+    } catch (err) {
+      console.error('Failed to move line, reverting:', err)
+      useStore.getState().setLines(lines)
+    }
   }
 
   const handleMoveLineDown = async (lineIndex: number) => {
     if (lineIndex >= playableLines.length - 1) return
     await handleMoveLineUp(lineIndex + 1)
+  }
+
+  const handleEditLineSplit = async (lineId: string, beforeText: string, afterText: string) => {
+    const line = lines.find(l => l.id === lineId)
+    if (!line) return
+    if (!beforeText.trim() || !afterText.trim()) {
+      const keepText = (beforeText + afterText).trim()
+      if (keepText) await handleEditLineSave(lineId, keepText)
+      return
+    }
+    isSplittingRef.current = true
+    try {
+      await updateLine(lineId, { content: beforeText.trim() })
+      const newLine = await addLine({
+        script_id: line.script_id,
+        scene_id: line.scene_id,
+        character_name: line.character_name,
+        content: afterText.trim(),
+        is_user_line: line.is_user_line,
+        line_type: line.line_type,
+        emotion: line.emotion || 'neutral',
+        sort_order: line.sort_order + 0.5,
+      })
+      const updatedLines = lines.map(l => l.id === lineId ? { ...l, content: beforeText.trim() } : l)
+      if (newLine) {
+        useStore.getState().setLines([...updatedLines, newLine].sort((a, b) => a.sort_order - b.sort_order))
+      } else {
+        useStore.getState().setLines(updatedLines)
+      }
+    } catch (e) {
+      console.error('Failed to split line:', e)
+    }
+    setEditingLineId(null)
+    setEditingContent('')
+    isSplittingRef.current = false
+  }
+
+  const handleInlineAdd = async (afterLineId: string, lineType: string, data: { character_name?: string; content: string; is_user_line?: boolean; emotion?: string }) => {
+    const afterLine = lines.find(l => l.id === afterLineId)
+    if (!afterLine) return
+    const newLine = await addLine({
+      script_id: afterLine.script_id,
+      scene_id: afterLine.scene_id,
+      character_name: data.character_name || '',
+      content: data.content,
+      is_user_line: data.is_user_line || false,
+      line_type: lineType,
+      emotion: data.emotion || 'neutral',
+      sort_order: afterLine.sort_order + 0.5,
+    })
+    if (newLine) {
+      useStore.getState().setLines([...lines, newLine].sort((a, b) => a.sort_order - b.sort_order))
+    }
+    setAddingAfterLineId(null)
   }
 
   const handlePlayPause = () => {
@@ -3041,11 +3448,20 @@ export function PracticeScreen() {
                     autoFocus
                     value={editingContent}
                     onChange={(e) => setEditingContent(e.target.value)}
-                    onBlur={() => handleEditLineSave(line.id, editingContent)}
+                    onBlur={() => { if (!isSplittingRef.current) handleEditLineSave(line.id, editingContent) }}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
                         setEditingLineId(null)
                         setEditingContent('')
+                      }
+                      if (e.key === 'Enter') {
+                        const ta = e.target as HTMLTextAreaElement
+                        const pos = ta.selectionStart
+                        const before = editingContent.slice(0, pos)
+                        if (before.endsWith('\n')) {
+                          e.preventDefault()
+                          handleEditLineSplit(line.id, before.slice(0, -1), editingContent.slice(pos))
+                        }
                       }
                     }}
                     className="w-full bg-transparent text-center outline-none resize-none not-italic text-text border border-accent/40 focus:border-accent rounded p-1"
@@ -3091,6 +3507,13 @@ export function PracticeScreen() {
                       {narratorContent}
                     </div>
                     <button
+                      onClick={() => setEditModal({ type: 'line', data: line, mode: 'edit' })}
+                      className="flex-shrink-0 p-1.5 rounded-lg text-text-muted hover:text-text hover:bg-overlay-10 transition-colors"
+                      title="Edit details"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    </button>
+                    <button
                       onClick={() => handleEditLineDelete(line.id)}
                       className="flex-shrink-0 p-1.5 rounded-lg text-error/60 hover:text-error hover:bg-error/10 transition-colors"
                     >
@@ -3104,6 +3527,16 @@ export function PracticeScreen() {
                   >
                     {narratorContent}
                   </motion.div>
+                )}
+                {/* Inline add zone between lines in edit mode */}
+                {isEditMode && (
+                  <InlineAddZone
+                    lineId={line.id}
+                    addingAfterLineId={addingAfterLineId}
+                    setAddingAfterLineId={setAddingAfterLineId}
+                    characters={characters}
+                    onAdd={handleInlineAdd}
+                  />
                 )}
               </div>
             )
@@ -3187,11 +3620,20 @@ export function PracticeScreen() {
                     autoFocus
                     value={editingContent}
                     onChange={(e) => setEditingContent(e.target.value)}
-                    onBlur={() => handleEditLineSave(line.id, editingContent)}
+                    onBlur={() => { if (!isSplittingRef.current) handleEditLineSave(line.id, editingContent) }}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
                         setEditingLineId(null)
                         setEditingContent('')
+                      }
+                      if (e.key === 'Enter') {
+                        const ta = e.target as HTMLTextAreaElement
+                        const pos = ta.selectionStart
+                        const before = editingContent.slice(0, pos)
+                        if (before.endsWith('\n')) {
+                          e.preventDefault()
+                          handleEditLineSplit(line.id, before.slice(0, -1), editingContent.slice(pos))
+                        }
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
@@ -3199,7 +3641,18 @@ export function PracticeScreen() {
                     rows={Math.max(2, editingContent.split('\n').length)}
                   />
                 ) : isCurrent && isUser && (status === 'listening' || status === 'segment' || status === 'correct' || status === 'wrong' || (learningMode === 'repeat' && segments.length > 0)) ? (
-                  <p className="text-sm leading-relaxed">
+                  <p className={`text-sm leading-relaxed ${(() => {
+                    // Apply blur/hidden to word-by-word view too
+                    const isCompleted = stats.completed.has(line.id)
+                    let vis = settings.useBeforeAfterVisibility
+                      ? (isCompleted ? settings.visibilityAfterSpeaking : settings.visibilityBeforeSpeaking)
+                      : settings.textVisibility
+                    if (settings.coldReadTime > 0 && !coldReadExpired) vis = 'full'
+                    if (status === 'correct' || status === 'wrong') vis = 'full' // Always show results
+                    if (vis === 'blurred') return 'blur-[6px] hover:blur-none transition-all'
+                    if (vis === 'hidden') return 'opacity-0'
+                    return ''
+                  })()}`}>
                     {(() => {
                       // Split content into parts: spoken words and parentheticals
                       // Regex captures parentheticals as separate parts
@@ -3361,6 +3814,13 @@ export function PracticeScreen() {
                     {dialogueCard}
                   </div>
                   <button
+                    onClick={() => setEditModal({ type: 'line', data: line, mode: 'edit' })}
+                    className="flex-shrink-0 p-1.5 rounded-lg text-text-muted hover:text-text hover:bg-overlay-10 transition-colors"
+                    title="Edit details"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                  </button>
+                  <button
                     onClick={() => handleEditLineDelete(line.id)}
                     className="flex-shrink-0 p-1.5 rounded-lg text-error/60 hover:text-error hover:bg-error/10 transition-colors"
                   >
@@ -3373,6 +3833,16 @@ export function PracticeScreen() {
                 >
                   {dialogueCard}
                 </motion.div>
+              )}
+              {/* Inline add zone between lines in edit mode */}
+              {isEditMode && (
+                <InlineAddZone
+                  lineId={line.id}
+                  addingAfterLineId={addingAfterLineId}
+                  setAddingAfterLineId={setAddingAfterLineId}
+                  characters={characters}
+                  onAdd={handleInlineAdd}
+                />
               )}
             </div>
           )
@@ -3692,6 +4162,45 @@ export function PracticeScreen() {
           </button>
         </div>
       </div>
+
+      {/* Run-through floating button */}
+      <AnimatePresence>
+        {learningMode === 'repeat' && !isRunThrough && completedUserLines.length > 0 && !showSettings && !showSummary && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="fixed bottom-[140px] right-4 z-40"
+          >
+            <button
+              onClick={startRunThrough}
+              className="w-11 h-11 rounded-full bg-accent shadow-lg shadow-accent/30 flex items-center justify-center text-white active:scale-90 transition-transform"
+              title="Run through completed lines"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 19V5" />
+                <path d="M5 12l7-7 7 7" />
+              </svg>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Run-through indicator badge */}
+      <AnimatePresence>
+        {isRunThrough && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed bottom-[140px] left-1/2 -translate-x-1/2 z-40"
+          >
+            <div className="px-3 py-1.5 rounded-full bg-accent/20 backdrop-blur border border-accent/30 text-accent text-xs font-medium">
+              Run-through
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Skip controls */}
       <div className="fixed bottom-[88px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-20">

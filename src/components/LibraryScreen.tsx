@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '@/store'
-import { supabase, getAuthHeaders, Script, Character, ELEVENLABS_VOICES } from '@/lib/supabase'
+import { supabase, getAuthHeaders, Script, Character, Folder, ELEVENLABS_VOICES } from '@/lib/supabase'
 import { api } from '@/lib/api'
 import { getPDFInfo, extractPagesFromPDF, extractAllPagesFromPDF, getPDFPreview, extractScenesByIds, extractPagesAsPDF, PDFInfo, PDFPreview, DetectedScene } from '@/lib/pdfExtractor'
 import PDFVisualPreview from './PDFVisualPreview'
 import { Card, Badge, Button, EmptyState, Spinner } from './ui'
 import { IconSearch, IconUpload, IconLibrary } from './icons'
 import { triggerAchievementCheck } from '@/hooks/useAchievements'
+import { createFolder, updateFolder, deleteFolder, moveScriptToFolder } from './EditModal'
+
+const FOLDER_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444']
 
 // Extract character names from script text using regex
 function extractCharactersFromText(text: string): string[] {
@@ -110,7 +113,7 @@ function extractCharactersFromText(text: string): string[] {
 }
 
 export function LibraryScreen() {
-  const { user, scripts, setScripts, setCurrentScript, setActiveTab, setScenes, setLines } = useStore()
+  const { user, scripts, setScripts, setCurrentScript, setActiveTab, setScenes, setLines, folders, setFolders, activeFolder, setActiveFolder } = useStore()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   // Only show loading if scripts aren't already in store
@@ -121,6 +124,17 @@ export function LibraryScreen() {
   const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(new Set())
   const [swipedScriptId, setSwipedScriptId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  // Folder UI state
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderColor, setNewFolderColor] = useState(FOLDER_COLORS[0])
+  const [folderMenuId, setFolderMenuId] = useState<string | null>(null)
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
+  const [renameFolderName, setRenameFolderName] = useState('')
+  const [colorPickerFolderId, setColorPickerFolderId] = useState<string | null>(null)
+  const [moveToFolderScriptId, setMoveToFolderScriptId] = useState<string | null>(null)
+  const folderMenuRef = useRef<HTMLDivElement>(null)
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     fetchScripts()
@@ -178,7 +192,19 @@ export function LibraryScreen() {
       }
       
       setScripts(data || [])
-      
+
+      // Fetch folders
+      try {
+        const foldersUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/folders?user_id=eq.${user.id}&order=sort_order.asc`
+        const foldersRes = await fetch(foldersUrl, { headers })
+        if (foldersRes.ok) {
+          const foldersData = await foldersRes.json()
+          setFolders(foldersData || [])
+        }
+      } catch (err) {
+        console.error('Error fetching folders:', err)
+      }
+
       // Check which scripts are still generating audio
       const generating = new Set<string>()
       data?.forEach((script: any) => {
@@ -324,15 +350,114 @@ export function LibraryScreen() {
 
   const filteredScripts = scriptsArray.filter(s => {
     const searchLower = search.toLowerCase()
-    const matchesSearch = s.title.toLowerCase().includes(searchLower) || 
+    const matchesSearch = s.title.toLowerCase().includes(searchLower) ||
                           (s.show_name?.toLowerCase().includes(searchLower)) ||
                           (s.user_role?.toLowerCase().includes(searchLower))
     const matchesFilter = filter === 'all' || s.type === filter || s.script_type === filter
-    return matchesSearch && matchesFilter
+    const matchesFolder =
+      activeFolder === null ||
+      (activeFolder === 'unfiled' && !s.folder_id) ||
+      s.folder_id === activeFolder
+    return matchesSearch && matchesFilter && matchesFolder
   })
 
   const totalLines = scriptsArray.reduce((sum, s) => sum + (s.total_lines || 0), 0)
   const totalPages = scriptsArray.reduce((sum, s) => sum + (s.page_count || 0), 0)
+
+  // === FOLDER HANDLERS ===
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim() || !user) return
+    const name = newFolderName.trim()
+    const color = newFolderColor
+    const sortOrder = folders.length
+    const optimisticId = 'temp-' + Date.now()
+    const optimisticFolder: Folder = {
+      id: optimisticId,
+      user_id: user.id,
+      name,
+      color,
+      sort_order: sortOrder,
+      created_at: new Date().toISOString(),
+    }
+    // Optimistic add
+    const updatedFolders = [...folders, optimisticFolder]
+    setFolders(updatedFolders)
+    setCreatingFolder(false)
+    setNewFolderName('')
+    setNewFolderColor(FOLDER_COLORS[0])
+
+    const result = await createFolder({
+      user_id: user.id,
+      name,
+      color,
+      sort_order: sortOrder,
+    })
+    if (result) {
+      // Replace optimistic with real
+      setFolders(useStore.getState().folders.map(f => f.id === optimisticId ? result : f))
+    } else {
+      // Remove optimistic on failure
+      setFolders(useStore.getState().folders.filter(f => f.id !== optimisticId))
+    }
+  }
+
+  const handleRenameFolder = async (folderId: string) => {
+    if (!renameFolderName.trim()) return
+    setFolders(folders.map(f => f.id === folderId ? { ...f, name: renameFolderName.trim() } : f))
+    setRenamingFolderId(null)
+    setFolderMenuId(null)
+    await updateFolder(folderId, { name: renameFolderName.trim() })
+  }
+
+  const handleChangeFolderColor = async (folderId: string, color: string) => {
+    setFolders(folders.map(f => f.id === folderId ? { ...f, color } : f))
+    setColorPickerFolderId(null)
+    setFolderMenuId(null)
+    await updateFolder(folderId, { color })
+  }
+
+  const handleDeleteFolder = async (folderId: string) => {
+    // Optimistic: remove folder and unfile scripts
+    setFolders(folders.filter(f => f.id !== folderId))
+    setScripts(scriptsArray.map(s => s.folder_id === folderId ? { ...s, folder_id: null } : s))
+    if (activeFolder === folderId) setActiveFolder(null)
+    setFolderMenuId(null)
+    await deleteFolder(folderId)
+  }
+
+  const handleMoveToFolder = async (scriptId: string, folderId: string | null) => {
+    setScripts(scriptsArray.map(s => s.id === scriptId ? { ...s, folder_id: folderId } : s))
+    setMoveToFolderScriptId(null)
+    setSwipedScriptId(null)
+    await moveScriptToFolder(scriptId, folderId)
+  }
+
+  const handleFolderLongPress = (folderId: string) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setFolderMenuId(folderId)
+      const folder = folders.find(f => f.id === folderId)
+      if (folder) setRenameFolderName(folder.name)
+    }, 500)
+  }
+
+  const handleFolderPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  // Close folder menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (folderMenuRef.current && !folderMenuRef.current.contains(e.target as Node)) {
+        setFolderMenuId(null)
+        setColorPickerFolderId(null)
+      }
+    }
+    if (folderMenuId) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [folderMenuId])
 
   // Get unique categories from scripts for dynamic filter - match scriptTypes in ImportModal
   const categories = ['all', 'tv_audition', 'film_audition', 'self_tape', 'scene_study', 'theatre', 'commercial', 'voiceover', 'monologue', 'narration', 'other']
@@ -380,14 +505,182 @@ export function LibraryScreen() {
         </div>
       </div>
 
+      {/* Folder row */}
+      <div className="px-5 mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
+        <button
+          onClick={() => setActiveFolder(null)}
+          className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+            activeFolder === null
+              ? 'bg-accent-muted border border-accent-border text-accent'
+              : 'bg-bg-surface border border-border text-text-muted hover:text-text'
+          }`}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setActiveFolder('unfiled')}
+          className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+            activeFolder === 'unfiled'
+              ? 'bg-accent-muted border border-accent-border text-accent'
+              : 'bg-bg-surface border border-border text-text-muted hover:text-text'
+          }`}
+        >
+          Unfiled
+        </button>
+        {folders.map((folder) => (
+          <button
+            key={folder.id}
+            onClick={() => {
+              if (!folderMenuId) setActiveFolder(folder.id)
+            }}
+            onMouseDown={() => handleFolderLongPress(folder.id)}
+            onMouseUp={handleFolderPressEnd}
+            onMouseLeave={handleFolderPressEnd}
+            onTouchStart={() => handleFolderLongPress(folder.id)}
+            onTouchEnd={handleFolderPressEnd}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setFolderMenuId(folder.id)
+              setRenameFolderName(folder.name)
+            }}
+            className={`relative px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              activeFolder === folder.id
+                ? 'bg-accent-muted border border-accent-border text-accent'
+                : 'bg-bg-surface border border-border text-text-muted hover:text-text'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: folder.color }} />
+            {renamingFolderId === folder.id ? (
+              <input
+                type="text"
+                value={renameFolderName}
+                onChange={(e) => setRenameFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameFolder(folder.id)
+                  if (e.key === 'Escape') { setRenamingFolderId(null); setFolderMenuId(null) }
+                }}
+                onBlur={() => handleRenameFolder(folder.id)}
+                autoFocus
+                className="bg-transparent border-none outline-none text-xs w-20 text-text"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              folder.name
+            )}
+          </button>
+        ))}
+        {creatingFolder ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-bg-surface border border-accent rounded-full">
+            <div className="flex gap-1">
+              {FOLDER_COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setNewFolderColor(c)}
+                  className={`w-4 h-4 rounded-full transition-transform ${newFolderColor === c ? 'scale-125 ring-1 ring-white/50' : ''}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateFolder()
+                if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName('') }
+              }}
+              placeholder="Folder name..."
+              autoFocus
+              className="bg-transparent border-none outline-none text-xs w-24 text-text placeholder:text-text-subtle"
+            />
+            <button
+              onClick={handleCreateFolder}
+              disabled={!newFolderName.trim()}
+              className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center flex-shrink-0 disabled:opacity-30 transition-opacity"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+            </button>
+            <button
+              onClick={() => { setCreatingFolder(false); setNewFolderName('') }}
+              className="w-6 h-6 rounded-full bg-bg text-text-muted flex items-center justify-center flex-shrink-0 hover:text-error transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setCreatingFolder(true)}
+            className="w-8 h-8 rounded-full bg-bg-surface border border-border text-text-muted hover:text-accent hover:border-accent flex items-center justify-center flex-shrink-0 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          </button>
+        )}
+      </div>
+
+      {/* Folder context menu */}
+      <AnimatePresence>
+        {folderMenuId && (
+          <motion.div
+            ref={folderMenuRef}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed z-[90] bg-bg-elevated border border-border rounded-xl shadow-lg p-1.5 min-w-[160px]"
+            style={{ top: '120px', left: '50%', transform: 'translateX(-50%)' }}
+          >
+            {colorPickerFolderId ? (
+              <div className="p-2">
+                <div className="text-xs text-text-muted mb-2">Pick a color</div>
+                <div className="flex gap-2">
+                  {FOLDER_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => handleChangeFolderColor(colorPickerFolderId, c)}
+                      className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
+                        folders.find(f => f.id === colorPickerFolderId)?.color === c ? 'ring-2 ring-white/50 scale-110' : ''
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => { setRenamingFolderId(folderMenuId); setFolderMenuId(null) }}
+                  className="w-full text-left px-3 py-2 text-sm text-text hover:bg-overlay-5 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                  Rename
+                </button>
+                <button
+                  onClick={() => setColorPickerFolderId(folderMenuId)}
+                  className="w-full text-left px-3 py-2 text-sm text-text hover:bg-overlay-5 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: folders.find(f => f.id === folderMenuId)?.color || '#6366f1' }} />
+                  Change Color
+                </button>
+                <button
+                  onClick={() => handleDeleteFolder(folderMenuId)}
+                  className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error/10 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  Delete Folder
+                </button>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="px-5 mb-5 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {categories.map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
-              filter === f 
-                ? 'bg-accent-muted border border-accent-border text-accent' 
+              filter === f
+                ? 'bg-accent-muted border border-accent-border text-accent'
                 : 'bg-bg-surface border border-border text-text-muted hover:text-text'
             }`}
           >
@@ -459,7 +752,18 @@ export function LibraryScreen() {
                               <span className="w-2 h-2 rounded-full bg-ai animate-pulse" title="Generating audio" />
                             )}
                           </div>
-                          <p className="text-text-muted text-xs">{script.episode || script.type}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-text-muted text-xs">{script.episode || script.type}</p>
+                            {script.folder_id && (() => {
+                              const folder = folders.find(f => f.id === script.folder_id)
+                              return folder ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] text-text-muted bg-bg-surface">
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: folder.color }} />
+                                  {folder.name}
+                                </span>
+                              ) : null
+                            })()}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="accent">{script.user_role}</Badge>
@@ -502,6 +806,15 @@ export function LibraryScreen() {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                 </svg>
                                 Voices
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setMoveToFolderScriptId(script.id); }}
+                                className="flex-1 py-2.5 rounded-lg bg-bg-surface flex items-center justify-center gap-2 text-sm text-text-muted hover:text-blue-400 transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                </svg>
+                                Folder
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleArchiveScript(script.id); setSwipedScriptId(null); }}
@@ -550,6 +863,63 @@ export function LibraryScreen() {
             script={voiceSetupScript} 
             onClose={() => { setVoiceSetupScript(null); fetchScripts() }} 
           />
+        )}
+      </AnimatePresence>
+
+      {/* Move to Folder Bottom Sheet */}
+      <AnimatePresence>
+        {moveToFolderScriptId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end justify-center"
+            onClick={() => setMoveToFolderScriptId(null)}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-bg-elevated rounded-t-2xl border-t border-border p-5 pb-8"
+            >
+              <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-text mb-4">Move to Folder</h3>
+              <div className="space-y-1.5">
+                <button
+                  onClick={() => handleMoveToFolder(moveToFolderScriptId, null)}
+                  className="w-full text-left px-4 py-3 rounded-lg hover:bg-overlay-5 transition-colors flex items-center gap-3"
+                >
+                  <svg className="w-5 h-5 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span className="text-sm text-text">Remove from folder</span>
+                </button>
+                {folders.map((folder) => {
+                  const isCurrentFolder = scriptsArray.find(s => s.id === moveToFolderScriptId)?.folder_id === folder.id
+                  return (
+                    <button
+                      key={folder.id}
+                      onClick={() => handleMoveToFolder(moveToFolderScriptId, folder.id)}
+                      className={`w-full text-left px-4 py-3 rounded-lg hover:bg-overlay-5 transition-colors flex items-center gap-3 ${isCurrentFolder ? 'bg-accent/10' : ''}`}
+                    >
+                      <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: folder.color }} />
+                      <span className="text-sm text-text flex-1">{folder.name}</span>
+                      {isCurrentFolder && (
+                        <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  )
+                })}
+                {folders.length === 0 && (
+                  <p className="text-sm text-text-muted text-center py-4">No folders yet. Create one from the folder row above.</p>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -608,9 +978,10 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
   onSuccess: (script: Script) => void
   onStartPractice: (script: Script) => void
 }) {
-  const { user } = useStore()
+  const { user, folders } = useStore()
   const [step, setStep] = useState<'choose' | 'text' | 'role' | 'importing' | 'success'>('choose')
   const [rawText, setRawText] = useState('')
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState('')
   const [userGender, setUserGender] = useState<'male' | 'female' | ''>('')
   const [scriptType, setScriptType] = useState<string>('tv_audition')
@@ -892,6 +1263,16 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
                     { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ title: userTitle }) }
                   )
                   script.title = userTitle
+                }
+
+                // If user selected a folder, assign it
+                if (selectedFolderId) {
+                  addDebug(`Assigning to folder: ${selectedFolderId}`)
+                  await fetch(
+                    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/scripts?id=eq.${script.id}`,
+                    { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ folder_id: selectedFolderId }) }
+                  )
+                  script.folder_id = selectedFolderId
                 }
 
                 // Get character count
@@ -1459,7 +1840,7 @@ No, she hasn't been in yet."
               {/* Voice Context Section */}
               <div className="pt-2 border-t border-border">
                 <p className="text-text-muted text-xs mb-3">Help us choose the right AI voices</p>
-                
+
                 {/* Accent/Region Hint */}
                 <div className="mb-3">
                   <label className="block text-text text-sm mb-1.5">Accent / Region</label>
@@ -1482,6 +1863,23 @@ No, she hasn't been in yet."
                   </select>
                 </div>
               </div>
+
+              {/* Add to Folder (optional) */}
+              {folders.length > 0 && (
+                <div>
+                  <label className="block text-text text-sm mb-2">Add to Folder <span className="text-text-muted text-xs">(optional)</span></label>
+                  <select
+                    value={selectedFolderId || ''}
+                    onChange={(e) => setSelectedFolderId(e.target.value || null)}
+                    className="w-full px-4 py-2.5 bg-bg-surface border border-border rounded-lg text-text text-sm focus:outline-none focus:border-accent appearance-none cursor-pointer"
+                  >
+                    <option value="">No folder</option>
+                    {folders.map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {error && <p className="text-error text-sm">{error}</p>}
             </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useSettings } from '@/store'
 
 interface WelcomeSplashProps {
@@ -87,12 +87,19 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
 
+  const [dismissing, setDismissing] = useState(false)
+
+  const handleDismiss = useCallback(() => {
+    if (phase !== 'greeting' || dismissing) return
+    setDismissing(true)
+    setPhase('exit')
+    setTimeout(() => onCompleteRef.current(), 600)
+  }, [phase, dismissing])
+
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('reveal'), 400)
-    const t2 = setTimeout(() => setPhase('greeting'), 1000)
-    const t3 = setTimeout(() => setPhase('exit'), 4800)
-    const t4 = setTimeout(() => onCompleteRef.current(), 5400)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
+    const t2 = setTimeout(() => setPhase('greeting'), 1200)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
   const accentColor = isLight ? '#B87333' : '#E11D48'
@@ -104,7 +111,8 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
       initial={{ opacity: 1 }}
       animate={{ opacity: phase === 'exit' ? 0 : 1 }}
       transition={{ duration: 0.5 }}
-      className="fixed inset-0 z-[100] bg-bg flex flex-col items-center justify-center overflow-hidden"
+      className="fixed inset-0 z-[100] bg-bg flex flex-col items-center justify-center overflow-hidden cursor-pointer"
+      onClick={handleDismiss}
     >
       {/* Animated background gradient — two crossing beams */}
       <motion.div
@@ -301,6 +309,16 @@ export function WelcomeSplash({ name, onComplete }: WelcomeSplashProps) {
             background: `linear-gradient(90deg, ${accentColor}, ${aiColor})`,
           }}
         />
+
+        {/* Tap to continue hint */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: phase === 'greeting' ? 0.4 : 0 }}
+          transition={{ duration: 0.6, delay: 1.5, ease: 'easeOut' }}
+          className="mt-10 text-[11px] text-text-muted tracking-wide"
+        >
+          Tap anywhere to continue
+        </motion.p>
       </div>
     </motion.div>
   )

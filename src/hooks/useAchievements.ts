@@ -243,7 +243,7 @@ export function useAchievements() {
     if (!loading && achievements.length > 0) {
       checkAndUnlockAchievements()
     }
-  }, [stats, loading, achievements.length])
+  }, [stats, loading, achievements.length, checkAndUnlockAchievements])
 
   // Refresh stats (call this after actions that might unlock achievements)
   const refreshStats = useCallback(async () => {

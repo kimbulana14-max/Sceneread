@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { Script, Scene, Line, Character, getAuthHeaders } from '@/lib/supabase'
+import { Script, Scene, Line, Character, Folder, getAuthHeaders } from '@/lib/supabase'
 
 // === PRACTICE SETTINGS (Global defaults) ===
 export interface PracticeSettings {
@@ -404,6 +404,64 @@ export const useScriptPractice = create<ScriptPracticeStore>((set, get) => ({
       get().updateScriptState(scriptId, {
         totalPracticeTimeMs: state.totalPracticeTimeMs + duration
       })
+
+      // Persist practice minutes to database (fire-and-forget)
+      const sessionMinutes = Math.round(duration / 60000)
+      if (sessionMinutes > 0) {
+        const userId = get().userId
+        if (userId) {
+          ;(async () => {
+            try {
+              const headers = await getAuthHeaders()
+              const today = new Date().toISOString().split('T')[0]
+
+              // Update daily_stats practice_minutes
+              const dailyRes = await fetch(
+                `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/daily_stats?user_id=eq.${userId}&date=eq.${today}`,
+                { headers }
+              )
+              if (dailyRes.ok) {
+                const existing = await dailyRes.json()
+                if (existing.length > 0) {
+                  await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/daily_stats?id=eq.${existing[0].id}`, {
+                    method: 'PATCH',
+                    headers: { ...headers, 'Prefer': 'return=minimal' },
+                    body: JSON.stringify({ practice_minutes: (existing[0].practice_minutes || 0) + sessionMinutes })
+                  })
+                } else {
+                  await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/daily_stats`, {
+                    method: 'POST',
+                    headers: { ...headers, 'Prefer': 'return=minimal' },
+                    body: JSON.stringify({ user_id: userId, date: today, lines_practiced: 0, practice_minutes: sessionMinutes, sessions_count: 1 })
+                  })
+                }
+              }
+
+              // Update profile total_practice_minutes
+              const profileRes = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, { headers })
+              if (profileRes.ok) {
+                const profiles = await profileRes.json()
+                if (profiles.length > 0) {
+                  const newTotal = (profiles[0].total_practice_minutes || 0) + sessionMinutes
+                  await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+                    method: 'PATCH',
+                    headers: { ...headers, 'Prefer': 'return=minimal' },
+                    body: JSON.stringify({ total_practice_minutes: newTotal })
+                  })
+
+                  // Update Zustand user object so HomeScreen sees fresh data
+                  const mainStore = useStore.getState()
+                  if (mainStore.user) {
+                    mainStore.setUser({ ...mainStore.user, total_practice_minutes: newTotal })
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('Error persisting practice minutes:', err)
+            }
+          })()
+        }
+      }
     }
     set({ sessionStartTime: null })
   },
@@ -457,6 +515,10 @@ interface AppState {
   activeTab: 'home' | 'library' | 'practice' | 'record' | 'voices' | 'insights' | 'profile'
   setActiveTab: (tab: 'home' | 'library' | 'practice' | 'record' | 'voices' | 'insights' | 'profile') => void
   getVoiceForCharacter: (characterName: string) => string | null
+  folders: Folder[]
+  setFolders: (folders: Folder[]) => void
+  activeFolder: string | null  // folder id, null = "All", 'unfiled' = no folder
+  setActiveFolder: (id: string | null) => void
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -506,6 +568,10 @@ export const useStore = create<AppState>((set, get) => ({
     const char = get().characters.find(c => c.name === characterName)
     return char?.voice_id || null
   },
+  folders: [],
+  setFolders: (folders) => set({ folders: Array.isArray(folders) ? folders : [] }),
+  activeFolder: null,
+  setActiveFolder: (id) => set({ activeFolder: id }),
 }))
 
 // === RECORDING SETTINGS STORE ===
