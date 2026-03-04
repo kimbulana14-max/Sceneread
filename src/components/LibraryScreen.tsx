@@ -460,13 +460,14 @@ export function LibraryScreen() {
   }, [folderMenuId])
 
   // Get unique categories from scripts for dynamic filter - match scriptTypes in ImportModal
-  const categories = ['all', 'tv_audition', 'film_audition', 'self_tape', 'scene_study', 'theatre', 'commercial', 'voiceover', 'monologue', 'narration', 'other']
-  
+  const categories = ['all', 'tv_audition', 'short_film_audition', 'feature_film_audition', 'self_tape', 'scene_study', 'theatre', 'commercial', 'voiceover', 'monologue', 'narration', 'other']
+
   // Better category display names
   const categoryLabels: Record<string, string> = {
     'all': 'All',
     'tv_audition': 'TV',
-    'film_audition': 'Film',
+    'short_film_audition': 'Short Film',
+    'feature_film_audition': 'Feature',
     'self_tape': 'Self-Tape',
     'scene_study': 'Scene Study',
     'theatre': 'Theatre',
@@ -1012,7 +1013,8 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
 
   const scriptTypes = [
     { value: 'tv_audition', label: 'TV Audition' },
-    { value: 'film_audition', label: 'Film Audition' },
+    { value: 'short_film_audition', label: 'Short Film Audition' },
+    { value: 'feature_film_audition', label: 'Feature Film Audition' },
     { value: 'self_tape', label: 'Self-Tape' },
     { value: 'scene_study', label: 'Scene Study' },
     { value: 'theatre', label: 'Theatre' },

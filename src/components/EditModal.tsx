@@ -719,7 +719,8 @@ function ScriptEditForm({ formData, setFormData }: { formData: any; setFormData:
             className="w-full px-3 py-2.5 bg-bg-surface border border-border rounded-lg text-text focus:outline-none focus:border-accent"
           >
             <option value="tv_audition">TV Audition</option>
-            <option value="film_audition">Film Audition</option>
+            <option value="short_film_audition">Short Film Audition</option>
+            <option value="feature_film_audition">Feature Film Audition</option>
             <option value="self_tape">Self Tape</option>
             <option value="scene_study">Scene Study</option>
             <option value="theatre">Theatre</option>

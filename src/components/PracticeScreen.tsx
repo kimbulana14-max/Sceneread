@@ -2064,32 +2064,72 @@ export function PracticeScreen() {
       setHasRecording(false)
     }
 
-    // Only call Whisper if Deepgram would mark it wrong (saves ~1s on correct answers)
+    // Azure PA is the primary accuracy authority — runs on every line with audio
     let spoken = deepgramSpoken
-    if (deepgramSpoken && expectedLineRef.current) {
-      const quickCheckStrict = isRunThroughRef.current ? true : settings.strictMode
-      const quickCheck = checkAccuracy(expectedLineRef.current, deepgramSpoken, quickCheckStrict, characterNameSet)
-      if (!quickCheck.isCorrect && blob && blob.size > 1024) {
-        // Deepgram says wrong — get Whisper's second opinion (prompt biases toward expected words)
-        try {
-          const formData = new FormData()
-          formData.append('audio', blob, 'audio.webm')
-          formData.append('prompt', expectedLineRef.current.slice(0, 800))
-          const resp = await fetch('/api/whisper-transcribe', { method: 'POST', body: formData })
-          if (resp.ok) {
-            const data = await resp.json()
-            if (data.transcript && data.transcript.trim()) {
-              console.log('[Whisper] second opinion:', JSON.stringify(data.transcript), 'deepgram:', JSON.stringify(deepgramSpoken))
-              spoken = data.transcript.trim()
+    let azurePAResult: { isCorrect: boolean; accuracy: number; missingWords: string[]; extraWords: string[]; wrongWords: string[]; wordResults: Array<'correct' | 'wrong' | 'missing'> } | null = null
+    const isStrictCheck = isRunThroughRef.current ? true : settings.strictMode
+    if (expectedLineRef.current && blob && blob.size > 1024) {
+      try {
+        const formData = new FormData()
+        formData.append('audio', blob, 'audio.webm')
+        formData.append('referenceText', expectedLineRef.current)
+        const resp = await fetch('/api/pronunciation-assess', { method: 'POST', body: formData })
+        if (resp.ok) {
+          const data = await resp.json()
+          if (data.words && data.words.length > 0) {
+            console.log('[Azure PA] words:', data.words.map((w: any) => `${w.word}(${w.errorType}:${w.accuracyScore})`).join(' '))
+            console.log('[Azure PA] overall:', JSON.stringify(data.overall), 'deepgram:', JSON.stringify(deepgramSpoken))
+
+            // Use Azure's displayText as the transcript
+            if (data.displayText) {
+              spoken = data.displayText
               setTranscript(spoken)
               transcriptRef.current = spoken
             }
+
+            // Build accuracy result from Azure PA per-word data
+            const azureWords: Array<{ word: string; errorType: string; accuracyScore: number }> = data.words
+            const missingWords: string[] = []
+            const wrongWords: string[] = []
+            const wordResults: Array<'correct' | 'wrong' | 'missing'> = []
+
+            for (const w of azureWords) {
+              if (w.errorType === 'None') {
+                wordResults.push('correct')
+              } else if (w.errorType === 'Omission') {
+                wordResults.push('missing')
+                missingWords.push(w.word)
+              } else if (w.errorType === 'Insertion') {
+                // Insertions are extra words the user said — skip from word results
+              } else {
+                // Mispronunciation or other error
+                wordResults.push('wrong')
+                wrongWords.push(`"${w.word}"`)
+              }
+            }
+
+            const overallAccuracy = data.overall?.accuracyScore ?? 0
+            const completeness = data.overall?.completenessScore ?? 0
+            const pronScore = data.overall?.pronScore ?? 0
+
+            // pronScore combines accuracy + fluency + completeness
+            const minScore = isStrictCheck ? 85 : 70
+            const isCorrect = pronScore >= minScore && wrongWords.length === 0
+
+            azurePAResult = {
+              isCorrect,
+              accuracy: Math.round(overallAccuracy),
+              missingWords,
+              extraWords: [],
+              wrongWords,
+              wordResults,
+            }
+
+            console.log('[Azure PA] verdict:', isCorrect ? 'CORRECT' : 'WRONG', 'pronScore:', pronScore, 'accuracy:', overallAccuracy, 'completeness:', completeness)
           }
-        } catch (e) {
-          console.warn('[Whisper] Failed, using Deepgram transcript:', e)
         }
-      } else {
-        console.log('[Deepgram] Correct on first check, skipping Whisper')
+      } catch (e) {
+        console.warn('[Azure PA] Failed, falling back to Deepgram + checkAccuracy:', e)
       }
     }
 
@@ -2198,8 +2238,8 @@ export function PracticeScreen() {
       return
     }
     
-    const isStrict = isRunThroughRef.current ? true : settings.strictMode
-    const result = checkAccuracy(expectedLineRef.current, spoken, isStrict, characterNameSet)
+    // Azure PA is primary; checkAccuracy is fallback if Azure didn't run or failed
+    const result = azurePAResult ?? checkAccuracy(expectedLineRef.current, spoken, isStrictCheck, characterNameSet)
     setTranscript(spoken)
     setMissingWords(result.missingWords)
     setWrongWords(result.wrongWords)
@@ -2354,9 +2394,13 @@ export function PracticeScreen() {
       setStats(s => ({ ...s, wrong: s.wrong + 1 }))
       if (scriptId) recordAttempt(scriptId, false)
       
-      // Get word-by-word results for visual feedback
-      const wordByWord = getWordByWordResults(expectedLineRef.current, spoken, characterNameSet)
-      setWordResults(wordByWord.results)
+      // Get word-by-word results for visual feedback (use Azure PA word results if available)
+      if (azurePAResult?.wordResults) {
+        setWordResults(azurePAResult.wordResults)
+      } else {
+        const wordByWord = getWordByWordResults(expectedLineRef.current, spoken, characterNameSet)
+        setWordResults(wordByWord.results)
+      }
       
       // Show error popup with what they got wrong
       const errorMsg = result.wrongWords.length > 0 
@@ -4260,9 +4304,10 @@ export function PracticeScreen() {
             if (currentLineIndex >= sceneLines.length - 1) setCurrentLineIndex(Math.max(0, currentLineIndex - 1)) 
           } 
         }} 
-        onAddLine={async (afterId, data) => { 
-          const newLine = await addLine({ ...data, sort_order: (lines.find(l => l.id === afterId)?.sort_order || 0) + 1 })
-          if (newLine) useStore.getState().setLines([...lines, newLine].sort((a, b) => a.sort_order - b.sort_order)) 
+        onAddLine={async (afterId, data) => {
+          const { afterLineId, ...lineData } = data // Strip non-DB field
+          const newLine = await addLine({ ...lineData, sort_order: (lines.find(l => l.id === afterId)?.sort_order || 0) + 1 })
+          if (newLine) useStore.getState().setLines([...lines, newLine].sort((a, b) => a.sort_order - b.sort_order))
         }} 
       />
     </div>
