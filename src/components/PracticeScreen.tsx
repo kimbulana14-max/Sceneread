@@ -354,6 +354,7 @@ export function PracticeScreen() {
   const [showStillThere, setShowStillThere] = useState(false) // Show "still there?" message
   const [showWaitingNudge, setShowWaitingNudge] = useState(false) // Gentle "waiting for you..." nudge
   const [lastLineAccuracy, setLastLineAccuracy] = useState<number | null>(null) // Per-line accuracy %
+  const [azureDebug, setAzureDebug] = useState<{ referenceText: string; displayText: string; words: Array<{ word: string; errorType: string; accuracyScore: number }>; overall: { accuracyScore: number; fluencyScore: number; completenessScore: number; pronScore: number }; pronUsed: boolean } | null>(null)
   const [coldReadExpired, setColdReadExpired] = useState(false) // Cold read timer expired
   const [lastPickupTime, setLastPickupTime] = useState<number | null>(null) // Cue pickup ms
   const [lastPacingDelta, setLastPacingDelta] = useState<{ userDuration: number; targetDuration: number; delta: number } | null>(null)
@@ -2134,11 +2135,22 @@ export function PracticeScreen() {
             }
 
             console.log('[Azure PA] verdict:', isCorrect ? 'CORRECT' : 'WRONG', 'pronScore:', pronScore, 'accuracy:', overallAccuracy, 'completeness:', completeness)
+
+            setAzureDebug({
+              referenceText: expectedLineRef.current,
+              displayText: data.displayText || '',
+              words: azureWords,
+              overall: { accuracyScore: overallAccuracy, fluencyScore: data.overall?.fluencyScore ?? 0, completenessScore: completeness, pronScore },
+              pronUsed: true,
+            })
           }
         }
       } catch (e) {
         console.warn('[Azure PA] Failed, falling back to Deepgram + checkAccuracy:', e)
+        setAzureDebug(null)
       }
+    } else {
+      setAzureDebug(null)
     }
 
     // Calculate pacing comparison
@@ -3869,19 +3881,36 @@ export function PracticeScreen() {
                 )}
                 {showNotes && line.notes && <p className="text-xs text-ai/70 mt-1.5 italic border-l-2 border-ai-border pl-2">{line.notes}</p>}
                 {isCurrent && isUser && status === 'correct' && (
-                  <div className="mt-1 flex gap-3 text-xs font-medium">
-                    {settings.showAccuracyScore && lastLineAccuracy !== null && (
-                      <span className="text-success">{lastLineAccuracy}%</span>
+                  <>
+                    <div className="mt-1 flex gap-3 text-xs font-medium">
+                      {settings.showAccuracyScore && lastLineAccuracy !== null && (
+                        <span className="text-success">{lastLineAccuracy}%</span>
+                      )}
+                      {lastPickupTime !== null && (
+                        <span className="text-ai">Pickup: {(lastPickupTime / 1000).toFixed(1)}s</span>
+                      )}
+                      {lastPacingDelta && (
+                        <span className={Math.abs(lastPacingDelta.delta) <= 10 ? 'text-success' : Math.abs(lastPacingDelta.delta) <= 25 ? 'text-warning' : 'text-error'}>
+                          {lastPacingDelta.delta > 0 ? '+' : ''}{lastPacingDelta.delta.toFixed(0)}% pace
+                        </span>
+                      )}
+                    </div>
+                    {azureDebug && (
+                      <div className="mt-1.5 p-2 rounded bg-black/30 text-[10px] font-mono leading-relaxed overflow-x-auto">
+                        <div className="text-text-muted">Azure PA: Heard "<span className="text-text">{azureDebug.displayText}</span>"</div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {azureDebug.words.map((w, i) => (
+                            <span key={i} className={`px-1 py-0.5 rounded ${w.errorType === 'None' ? 'bg-success/20 text-success' : w.errorType === 'Insertion' ? 'bg-ai/20 text-ai' : 'bg-warning/20 text-warning'}`}>
+                              {w.word} <span className="opacity-60">({w.accuracyScore})</span>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="mt-1 text-text-muted">
+                          Pron: <span className="text-text">{azureDebug.overall.pronScore}</span> | Acc: <span className="text-text">{azureDebug.overall.accuracyScore}</span> | Fluency: <span className="text-text">{azureDebug.overall.fluencyScore}</span> | Complete: <span className="text-text">{azureDebug.overall.completenessScore}</span>
+                        </div>
+                      </div>
                     )}
-                    {lastPickupTime !== null && (
-                      <span className="text-ai">Pickup: {(lastPickupTime / 1000).toFixed(1)}s</span>
-                    )}
-                    {lastPacingDelta && (
-                      <span className={Math.abs(lastPacingDelta.delta) <= 10 ? 'text-success' : Math.abs(lastPacingDelta.delta) <= 25 ? 'text-warning' : 'text-error'}>
-                        {lastPacingDelta.delta > 0 ? '+' : ''}{lastPacingDelta.delta.toFixed(0)}% pace
-                      </span>
-                    )}
-                  </div>
+                  </>
                 )}
               </div>
             </div>
@@ -3968,6 +3997,26 @@ export function PracticeScreen() {
                 </div>
                 {wrongWords.length > 0 && <div className="text-xs text-warning mb-1">Wrong: {wrongWords.join(', ')}</div>}
                 {missingWords.length > 0 && <div className="text-xs text-error mb-2">Missing: {missingWords.join(', ')}</div>}
+                {azureDebug && (
+                  <div className="mt-2 mb-2 p-2 rounded bg-black/30 text-[10px] font-mono leading-relaxed overflow-x-auto">
+                    <div className="text-text-muted mb-1">Azure PA Debug:</div>
+                    <div className="text-text-muted">Ref: <span className="text-text">{azureDebug.referenceText}</span></div>
+                    <div className="text-text-muted">Heard: <span className="text-text">{azureDebug.displayText}</span></div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {azureDebug.words.map((w, i) => (
+                        <span key={i} className={`px-1 py-0.5 rounded ${w.errorType === 'None' ? 'bg-success/20 text-success' : w.errorType === 'Omission' ? 'bg-error/20 text-error' : w.errorType === 'Insertion' ? 'bg-ai/20 text-ai' : 'bg-warning/20 text-warning'}`}>
+                          {w.word} <span className="opacity-60">({w.errorType} {w.accuracyScore})</span>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-1 text-text-muted">
+                      Pron: <span className="text-text">{azureDebug.overall.pronScore}</span> | Acc: <span className="text-text">{azureDebug.overall.accuracyScore}</span> | Fluency: <span className="text-text">{azureDebug.overall.fluencyScore}</span> | Complete: <span className="text-text">{azureDebug.overall.completenessScore}</span>
+                    </div>
+                  </div>
+                )}
+                {!azureDebug && (
+                  <div className="text-[10px] text-text-muted mb-2 italic">Fallback checker used (no Azure PA)</div>
+                )}
                 <div className="flex gap-2">
                   <Button size="sm" onClick={retry} className="flex-1">Try Again</Button>
                   {hasRecording && (
