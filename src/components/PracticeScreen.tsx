@@ -348,6 +348,7 @@ export function PracticeScreen() {
   const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0) // Track timeouts for "still there?" prompt
   const [consecutiveWrongs, setConsecutiveWrongs] = useState(0) // Track wrong attempts for go-back logic
   const [consecutiveLineFails, setConsecutiveLineFails] = useState(0) // Track full line failures for restart-on-fail
+  const [showSceneRestart, setShowSceneRestart] = useState(false) // Brief "Restarting..." indicator
   const [fullLineCompletions, setFullLineCompletions] = useState(0) // Track full line repetitions at end
   const [segmentCompletions, setSegmentCompletions] = useState(0) // Track per-segment repetitions before advancing
   const [showStillThere, setShowStillThere] = useState(false) // Show "still there?" message
@@ -629,6 +630,13 @@ export function PracticeScreen() {
   const completedUserLines = userLines.filter(l => stats.completed.has(l.id))
   const canInteract = !isEditMode && (status === 'idle' || status === 'wrong' || status === 'correct')
 
+  // Clamp currentLineIndex if playableLines shrinks (e.g. toggling includeDirections off)
+  useEffect(() => {
+    if (playableLines.length > 0 && currentLineIndex >= playableLines.length) {
+      setCurrentLineIndex(Math.max(0, playableLines.length - 1))
+    }
+  }, [includeDirections, playableLines.length])
+
   // Build scene header text
   const getSceneSlug = (scene: typeof currentSceneData) => {
     if (!scene) return ''
@@ -694,7 +702,7 @@ export function PracticeScreen() {
       if (learningMode === 'listen') playCurrentLine();
       else if (micReady) playCurrentLine()
     }
-  }, [isPlaying, micReady, status, currentLineIndex, learningMode])
+  }, [isPlaying, micReady, status, currentLineIndex, currentLine?.id, learningMode])
 
   const cleanup = () => {
     cancelAnimationFrame(frameRef.current)
@@ -2195,6 +2203,8 @@ export function PracticeScreen() {
           setConsecutiveWrongs(0) // Reset counter
           setStatus('wrong') // Show wrong state with word-by-word results
           const nonce = ++segmentNonceRef.current
+          // Note: prevIndex/segs are captured from closure but segmentNonceRef guard
+          // ensures this callback is discarded if segment state changes before it fires
           setTimeout(async () => {
             if (segmentNonceRef.current !== nonce) return // Stale
             if (!isPlayingRef.current) return
@@ -2210,6 +2220,8 @@ export function PracticeScreen() {
           // Auto-retry current segment after pause to see results
           setStatus('wrong') // Show wrong state with word-by-word results
           const nonce = ++segmentNonceRef.current
+          // Note: segIdx/segs are captured from closure but segmentNonceRef guard
+          // ensures this callback is discarded if segment state changes before it fires
           setTimeout(async () => {
             if (segmentNonceRef.current !== nonce) return // Stale
             if (!isPlayingRef.current) return
@@ -2230,8 +2242,9 @@ export function PracticeScreen() {
         if (settings.autoRepeatOnWrong && isPlayingRef.current) {
           setTimeout(() => {
             if (!isPlayingRef.current) return
+            busyRef.current = false
             setStatus('idle')
-            playCurrentLine()
+            // useEffect at 688 will call playCurrentLine() with fresh state
           }, 1500)
         }
       }
@@ -2452,6 +2465,8 @@ export function PracticeScreen() {
           setConsecutiveWrongs(0) // Reset counter
           setStatus('wrong')
           const nonce = ++segmentNonceRef.current
+          // Note: prevIndex/segs are captured from closure but segmentNonceRef guard
+          // ensures this callback is discarded if segment state changes before it fires
           setTimeout(async () => {
             if (segmentNonceRef.current !== nonce) return
             if (!isPlayingRef.current) return
@@ -2467,6 +2482,8 @@ export function PracticeScreen() {
           // Auto-retry current segment after pause to show results
           setStatus('wrong')
           const nonce = ++segmentNonceRef.current
+          // Note: segIdx/segs are captured from closure but segmentNonceRef guard
+          // ensures this callback is discarded if segment state changes before it fires
           setTimeout(async () => {
             if (segmentNonceRef.current !== nonce) return
             if (!isPlayingRef.current) return
@@ -2491,15 +2508,18 @@ export function PracticeScreen() {
           
           // If restartOnFail is also enabled and we've failed the line twice, restart scene
           if (settings.restartOnFail && newLineFails >= 2) {
+            setShowSceneRestart(true)
             setTimeout(() => {
               if (!isPlayingRef.current) return
+              setShowSceneRestart(false)
               setCurrentLineIndex(0)
               setCurrentSegmentIndex(0)
               setBuildProgress(0)
               setConsecutiveWrongs(0)
               setConsecutiveLineFails(0)
+              busyRef.current = false
               setStatus('idle')
-            }, 1500)
+            }, 2000)
           } else {
             // Reset to beginning of current line (segment 0) and replay
             setTimeout(() => {
@@ -2507,27 +2527,32 @@ export function PracticeScreen() {
               setCurrentSegmentIndex(0)
               setBuildProgress(0)
               setConsecutiveWrongs(0)
+              busyRef.current = false
               setStatus('idle')
-              playCurrentLine()
+              // useEffect at 688 will call playCurrentLine() with fresh state
             }, 1500)
           }
         } else if (settings.restartOnFail && isPlayingRef.current) {
           // Just restart from beginning of scene immediately
+          setShowSceneRestart(true)
           setTimeout(() => {
             if (!isPlayingRef.current) return
+            setShowSceneRestart(false)
             setCurrentLineIndex(0)
             setCurrentSegmentIndex(0)
             setBuildProgress(0)
             setConsecutiveWrongs(0)
             setConsecutiveLineFails(0)
+            busyRef.current = false
             setStatus('idle')
-          }, 1500)
+          }, 2000)
         } else if (settings.autoRepeatOnWrong && isPlayingRef.current) {
           // Auto-repeat current segment on wrong
           setTimeout(() => {
             if (!isPlayingRef.current) return
+            busyRef.current = false
             setStatus('idle')
-            playCurrentLine()
+            // useEffect at 688 will call playCurrentLine() with fresh state
           }, 1500) // Wait 1.5s then replay
         }
       }
@@ -2554,11 +2579,12 @@ export function PracticeScreen() {
   
   const retry = () => {
     busyRef.current = false
-    setStatus('idle')
     if (learningMode === 'repeat' && segments.length > 0) {
       // In build mode, retry plays the accumulated segments again
-      setTimeout(() => playCurrentLine(), 100)
+      // Set idle after busyRef is cleared so useEffect triggers playCurrentLine with fresh state
+      setStatus('idle')
     } else {
+      setStatus('idle')
       setTimeout(startListening, 100)
     }
   }
@@ -2673,6 +2699,16 @@ export function PracticeScreen() {
     await handleMoveLineUp(lineIndex + 1)
   }
 
+  // Compute a sort_order midpoint between the given line and the next one (always unique)
+  const getInsertSortOrder = (afterLineId: string): number => {
+    const sorted = [...lines].sort((a, b) => a.sort_order - b.sort_order)
+    const idx = sorted.findIndex(l => l.id === afterLineId)
+    if (idx < 0) return 1
+    const current = sorted[idx].sort_order
+    const next = idx < sorted.length - 1 ? sorted[idx + 1].sort_order : current + 2
+    return (current + next) / 2
+  }
+
   const handleEditLineSplit = async (lineId: string, beforeText: string, afterText: string) => {
     const line = lines.find(l => l.id === lineId)
     if (!line) return
@@ -2692,7 +2728,7 @@ export function PracticeScreen() {
         is_user_line: line.is_user_line,
         line_type: line.line_type,
         emotion: line.emotion || 'neutral',
-        sort_order: line.sort_order + 0.5,
+        sort_order: getInsertSortOrder(lineId),
       })
       const updatedLines = lines.map(l => l.id === lineId ? { ...l, content: beforeText.trim() } : l)
       if (newLine) {
@@ -2719,7 +2755,7 @@ export function PracticeScreen() {
       is_user_line: data.is_user_line || false,
       line_type: lineType,
       emotion: data.emotion || 'neutral',
-      sort_order: afterLine.sort_order + 0.5,
+      sort_order: getInsertSortOrder(afterLineId),
     })
     if (newLine) {
       useStore.getState().setLines([...lines, newLine].sort((a, b) => a.sort_order - b.sort_order))
@@ -3253,7 +3289,17 @@ export function PracticeScreen() {
                     <SettingsToggle
                       label="Include stage directions"
                       value={includeDirections}
-                      onChange={setIncludeDirections}
+                      onChange={v => {
+                        const currentId = currentLine?.id
+                        setIncludeDirections(v)
+                        // Find the same line in the new filtered list by ID
+                        if (currentId) {
+                          const newLines = v ? sceneLines : sceneLines.filter(l => l.line_type === 'dialogue')
+                          const newIdx = newLines.findIndex(l => l.id === currentId)
+                          if (newIdx >= 0) setCurrentLineIndex(newIdx)
+                          else setCurrentLineIndex(Math.min(currentLineIndex, Math.max(0, newLines.length - 1)))
+                        }
+                      }}
                     />
                     {includeDirections && (
                       <div className="flex gap-2 bg-bg-surface rounded-xl p-1.5 mt-3">
@@ -3334,7 +3380,15 @@ export function PracticeScreen() {
                   <SettingsToggle
                     label="Random line order"
                     value={settings.randomOrder}
-                    onChange={v => { updateSettings({ randomOrder: v }); if (v) buildRandomQueue() }}
+                    onChange={v => {
+                      updateSettings({ randomOrder: v })
+                      if (v) {
+                        buildRandomQueue()
+                      } else {
+                        randomQueueRef.current = []
+                        randomQueuePosRef.current = 0
+                      }
+                    }}
                   />
                 </SettingsSection>
 
@@ -3649,7 +3703,7 @@ export function PracticeScreen() {
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: { ...line, afterLineId: line.id, script_id: line.script_id, scene_id: line.scene_id, sort_order: line.sort_order + 1 }, mode: 'add' }); setSelectedLineId(null) }}
+                        onClick={(e) => { e.stopPropagation(); setEditModal({ type: 'line', data: { ...line, afterLineId: line.id, script_id: line.script_id, scene_id: line.scene_id, sort_order: getInsertSortOrder(line.id) }, mode: 'add' }); setSelectedLineId(null) }}
                         className="p-1 rounded hover:bg-overlay-10 text-text-muted hover:text-success"
                         title="Add line after"
                       >
@@ -4094,6 +4148,22 @@ export function PracticeScreen() {
         )}
       </AnimatePresence>
 
+      {/* "Restarting from beginning..." indicator */}
+      <AnimatePresence>
+        {showSceneRestart && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed bottom-36 left-1/2 -translate-x-1/2 z-[100]"
+          >
+            <div className="px-5 py-2.5 bg-red-500/90 rounded-full text-white font-medium shadow-xl">
+              Restarting from beginning...
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* "Still there?" prompt after 3 timeouts */}
       <AnimatePresence>
         {showStillThere && (
@@ -4306,7 +4376,8 @@ export function PracticeScreen() {
         }} 
         onAddLine={async (afterId, data) => {
           const { afterLineId, ...lineData } = data // Strip non-DB field
-          const newLine = await addLine({ ...lineData, sort_order: (lines.find(l => l.id === afterId)?.sort_order || 0) + 1 })
+          const sortOrder = afterId ? getInsertSortOrder(afterId) : (data.sort_order ?? 1)
+          const newLine = await addLine({ ...lineData, sort_order: sortOrder })
           if (newLine) useStore.getState().setLines([...lines, newLine].sort((a, b) => a.sort_order - b.sort_order))
         }} 
       />
