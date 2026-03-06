@@ -13,50 +13,6 @@ import { triggerAchievementCheck } from '@/hooks/useAchievements'
 
 import { audioManager, playTone as audioPlayTone } from '@/lib/audioManager'
 
-// Convert audio blob (webm/opus) to WAV for Azure Pronunciation Assessment
-// Azure PA returns null scores for webm — needs WAV to produce pronScore/accuracy/fluency
-async function convertBlobToWav(blob: Blob): Promise<Blob> {
-  const arrayBuffer = await blob.arrayBuffer()
-  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 })
-  try {
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
-    // Downsample to 16kHz mono (Azure's preferred format)
-    const sampleRate = 16000
-    const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * sampleRate), sampleRate)
-    const source = offlineCtx.createBufferSource()
-    source.buffer = audioBuffer
-    source.connect(offlineCtx.destination)
-    source.start()
-    const rendered = await offlineCtx.startRendering()
-    const pcm = rendered.getChannelData(0)
-
-    // Build WAV file
-    const wavBuffer = new ArrayBuffer(44 + pcm.length * 2)
-    const view = new DataView(wavBuffer)
-    const writeString = (offset: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)) }
-    writeString(0, 'RIFF')
-    view.setUint32(4, 36 + pcm.length * 2, true)
-    writeString(8, 'WAVE')
-    writeString(12, 'fmt ')
-    view.setUint32(16, 16, true) // chunk size
-    view.setUint16(20, 1, true)  // PCM
-    view.setUint16(22, 1, true)  // mono
-    view.setUint32(24, sampleRate, true)
-    view.setUint32(28, sampleRate * 2, true) // byte rate
-    view.setUint16(32, 2, true)  // block align
-    view.setUint16(34, 16, true) // bits per sample
-    writeString(36, 'data')
-    view.setUint32(40, pcm.length * 2, true)
-    for (let i = 0; i < pcm.length; i++) {
-      const s = Math.max(-1, Math.min(1, pcm[i]))
-      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
-    }
-    return new Blob([wavBuffer], { type: 'audio/wav' })
-  } finally {
-    await audioCtx.close()
-  }
-}
-
 // Record a completed line to daily stats and update streak
 const recordLineCompletion = async (userId: string, scriptId?: string) => {
   if (!userId) return
@@ -190,7 +146,7 @@ const transformText = (text: string, mode: 'full' | 'first-letter' | 'blurred' |
   return text
 }
 
-type Status = 'idle' | 'ai' | 'narrator' | 'connecting' | 'listening' | 'correct' | 'wrong' | 'segment' | 'user-listen'
+type Status = 'idle' | 'ai' | 'narrator' | 'connecting' | 'listening' | 'checking' | 'correct' | 'wrong' | 'segment' | 'user-listen'
 type LearningMode = 'listen' | 'repeat' | 'practice'
 type InlineAddType = 'dialogue' | 'action' | 'transition' | 'narration'
 
@@ -1904,8 +1860,7 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        const minSilence = 1500
-        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 2500
+        const timeout = coverage >= 0.95 ? 1200 : Math.max(2000, settings.silenceDuration)
         if (silenceMs > timeout) {
           console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms (coverage:', Math.round(coverage * 100) + '%, timeout:', timeout + 'ms)')
           finishListeningRef.current();
@@ -2018,10 +1973,9 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        // Only use short timeout when user has said nearly everything (95%+)
-        // Enforce 1500ms minimum so Deepgram finals can arrive
-        const minSilence = 1500
-        const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 2500
+        // Short timeout when user has said nearly everything (95%+)
+        // 1200ms is enough for Deepgram finals to arrive
+        const timeout = coverage >= 0.95 ? 1200 : Math.max(2000, settings.silenceDuration)
         // Log every second so we can see the countdown
         if (silenceMs > 1000 && Math.floor(silenceMs / 1000) !== Math.floor((silenceMs - 250) / 1000)) {
           console.log('[Silence]', Math.round(silenceMs/1000) + 's /', (timeout/1000) + 's timeout | spoken:', spokenWords + '/' + expectedWords, '(' + Math.round(coverage * 100) + '%) |', JSON.stringify(hasTranscript))
@@ -2121,6 +2075,10 @@ export function PracticeScreen() {
     let spoken = deepgramSpoken
     let azurePAResult: { isCorrect: boolean; accuracy: number; missingWords: string[]; extraWords: string[]; wrongWords: string[]; wordResults: Array<'correct' | 'wrong' | 'missing'> } | null = null
     const isStrictCheck = isRunThroughRef.current ? true : settings.strictMode
+
+    // Show "checking" state immediately so user knows mic is off and we're processing
+    setStatus('checking')
+
     if (expectedLineRef.current && blob && blob.size > 1024) {
       try {
         const formData = new FormData()
@@ -4085,17 +4043,25 @@ export function PracticeScreen() {
           )}
         </AnimatePresence>
 
-        {/* Listening feedback */}
+        {/* Listening / Checking feedback */}
         <AnimatePresence>
-          {status === 'listening' && (
+          {(status === 'listening' || status === 'checking') && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div className="px-4 py-3 rounded-lg bg-ai-muted border border-ai-border">
+              <div className={`px-4 py-3 rounded-lg ${status === 'checking' ? 'bg-accent/10 border border-accent/30' : 'bg-ai-muted border border-ai-border'}`}>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-ai animate-pulse" />
-                  <span className="flex-1 text-sm text-ai truncate">{transcript || 'Listening...'}</span>
-                  <div className="w-12 h-1.5 bg-black/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-ai transition-all" style={{ width: `${audioLevel}%` }} />
-                  </div>
+                  {status === 'checking' ? (
+                    <div className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-ai animate-pulse" />
+                  )}
+                  <span className={`flex-1 text-sm truncate ${status === 'checking' ? 'text-text-secondary' : 'text-ai'}`}>
+                    {status === 'checking' ? 'Checking...' : (transcript || 'Listening...')}
+                  </span>
+                  {status === 'listening' && (
+                    <div className="w-12 h-1.5 bg-black/20 rounded-full overflow-hidden">
+                      <div className="h-full bg-ai transition-all" style={{ width: `${audioLevel}%` }} />
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -4358,7 +4324,9 @@ export function PracticeScreen() {
               'bg-gradient-to-br from-accent to-accent/80 shadow-lg shadow-accent/20'
             }`}
           >
-            {status === 'listening' ? (
+            {status === 'checking' ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : status === 'listening' ? (
               /* Animated waveform bars */
               <div className="flex items-center justify-center gap-0.5">
                 <div className="w-0.5 h-3 bg-white rounded-full animate-[waveform_0.5s_ease-in-out_infinite]" style={{ animationDelay: '0ms' }} />
