@@ -13,6 +13,50 @@ import { triggerAchievementCheck } from '@/hooks/useAchievements'
 
 import { audioManager, playTone as audioPlayTone } from '@/lib/audioManager'
 
+// Convert audio blob (webm/opus) to WAV for Azure Pronunciation Assessment
+// Azure PA returns null scores for webm — needs WAV to produce pronScore/accuracy/fluency
+async function convertBlobToWav(blob: Blob): Promise<Blob> {
+  const arrayBuffer = await blob.arrayBuffer()
+  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 })
+  try {
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
+    // Downsample to 16kHz mono (Azure's preferred format)
+    const sampleRate = 16000
+    const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * sampleRate), sampleRate)
+    const source = offlineCtx.createBufferSource()
+    source.buffer = audioBuffer
+    source.connect(offlineCtx.destination)
+    source.start()
+    const rendered = await offlineCtx.startRendering()
+    const pcm = rendered.getChannelData(0)
+
+    // Build WAV file
+    const wavBuffer = new ArrayBuffer(44 + pcm.length * 2)
+    const view = new DataView(wavBuffer)
+    const writeString = (offset: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)) }
+    writeString(0, 'RIFF')
+    view.setUint32(4, 36 + pcm.length * 2, true)
+    writeString(8, 'WAVE')
+    writeString(12, 'fmt ')
+    view.setUint32(16, 16, true) // chunk size
+    view.setUint16(20, 1, true)  // PCM
+    view.setUint16(22, 1, true)  // mono
+    view.setUint32(24, sampleRate, true)
+    view.setUint32(28, sampleRate * 2, true) // byte rate
+    view.setUint16(32, 2, true)  // block align
+    view.setUint16(34, 16, true) // bits per sample
+    writeString(36, 'data')
+    view.setUint32(40, pcm.length * 2, true)
+    for (let i = 0; i < pcm.length; i++) {
+      const s = Math.max(-1, Math.min(1, pcm[i]))
+      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+    }
+    return new Blob([wavBuffer], { type: 'audio/wav' })
+  } finally {
+    await audioCtx.close()
+  }
+}
+
 // Record a completed line to daily stats and update streak
 const recordLineCompletion = async (userId: string, scriptId?: string) => {
   if (!userId) return
@@ -2079,8 +2123,10 @@ export function PracticeScreen() {
     const isStrictCheck = isRunThroughRef.current ? true : settings.strictMode
     if (expectedLineRef.current && blob && blob.size > 1024) {
       try {
+        // Convert webm/opus to WAV — Azure PA needs WAV for pronunciation scores
+        const wavBlob = await convertBlobToWav(blob)
         const formData = new FormData()
-        formData.append('audio', blob, 'audio.webm')
+        formData.append('audio', wavBlob, 'audio.wav')
         formData.append('referenceText', expectedLineRef.current)
         const resp = await fetch('/api/pronunciation-assess', { method: 'POST', body: formData })
         if (resp.ok) {
@@ -2117,17 +2163,26 @@ export function PracticeScreen() {
               }
             }
 
-            const overallAccuracy = data.overall?.accuracyScore ?? 0
-            const completeness = data.overall?.completenessScore ?? 0
-            const pronScore = data.overall?.pronScore ?? 0
+            const overallAccuracy = data.overall?.accuracyScore ?? null
+            const completeness = data.overall?.completenessScore ?? null
+            const pronScore = data.overall?.pronScore ?? null
 
-            // pronScore combines accuracy + fluency + completeness
+            // If Azure returned null scores (webm format limitation), fall back to word-level verdicts
+            // All words recognized correctly (no wrong/missing) = correct
+            const scoresAvailable = pronScore !== null
             const minScore = isStrictCheck ? 85 : 70
-            const isCorrect = pronScore >= minScore && wrongWords.length === 0
+            const isCorrect = scoresAvailable
+              ? (pronScore >= minScore && wrongWords.length === 0)
+              : (wrongWords.length === 0 && missingWords.length === 0)
+
+            // If scores are null, compute accuracy from word results
+            const computedAccuracy = scoresAvailable
+              ? Math.round(overallAccuracy!)
+              : Math.round((wordResults.filter(r => r === 'correct').length / Math.max(1, wordResults.length)) * 100)
 
             azurePAResult = {
               isCorrect,
-              accuracy: Math.round(overallAccuracy),
+              accuracy: computedAccuracy,
               missingWords,
               extraWords: [],
               wrongWords,
@@ -2140,7 +2195,7 @@ export function PracticeScreen() {
               referenceText: expectedLineRef.current,
               displayText: data.displayText || '',
               words: azureWords,
-              overall: { accuracyScore: overallAccuracy, fluencyScore: data.overall?.fluencyScore ?? 0, completenessScore: completeness, pronScore },
+              overall: { accuracyScore: overallAccuracy ?? 0, fluencyScore: data.overall?.fluencyScore ?? 0, completenessScore: completeness ?? 0, pronScore: pronScore ?? 0 },
               pronUsed: true,
             })
           }

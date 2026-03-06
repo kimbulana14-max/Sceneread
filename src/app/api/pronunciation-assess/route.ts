@@ -36,12 +36,11 @@ export async function POST(request: Request) {
     // Convert audio blob to ArrayBuffer for the request body
     const audioBuffer = await audio.arrayBuffer()
 
-    // Detect content type — Azure needs WAV or raw audio
-    // WebM/Opus from browser needs to be sent as-is; Azure supports many formats
-    const mimeType = audio.type || 'audio/webm'
-    let contentType = 'audio/webm; codecs=opus'
-    if (mimeType.includes('wav')) {
-      contentType = 'audio/wav'
+    // Client sends WAV (converted from webm for full pronunciation assessment support)
+    const mimeType = audio.type || 'audio/wav'
+    let contentType = 'audio/wav'
+    if (mimeType.includes('webm')) {
+      contentType = 'audio/webm; codecs=opus'
     } else if (mimeType.includes('mp4') || mimeType.includes('m4a') || mimeType.includes('aac')) {
       contentType = 'audio/mp4'
     } else if (mimeType.includes('ogg')) {
