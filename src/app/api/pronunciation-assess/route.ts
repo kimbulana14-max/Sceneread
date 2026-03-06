@@ -80,20 +80,23 @@ export async function POST(request: Request) {
     console.log('[Azure PA] NBest[0].PronunciationAssessment:', JSON.stringify(nBest?.PronunciationAssessment))
     console.log('[Azure PA] First word raw:', JSON.stringify(nBest?.Words?.[0]))
 
+    // Azure returns scores either flat on nBest/word or nested under PronunciationAssessment
+    const getScore = (obj: any, key: string) => obj?.[key] ?? obj?.PronunciationAssessment?.[key] ?? null
+
     const words = nBest?.Words?.map((w: any) => ({
       word: w.Word,
-      accuracyScore: w.PronunciationAssessment?.AccuracyScore ?? null,
-      errorType: w.PronunciationAssessment?.ErrorType ?? 'None',
+      accuracyScore: getScore(w, 'AccuracyScore'),
+      errorType: w.ErrorType ?? w.PronunciationAssessment?.ErrorType ?? 'None',
     })) || []
 
     return NextResponse.json({
       recognitionStatus: result.RecognitionStatus,
       displayText: result.DisplayText,
       overall: {
-        accuracyScore: nBest?.PronunciationAssessment?.AccuracyScore ?? null,
-        fluencyScore: nBest?.PronunciationAssessment?.FluencyScore ?? null,
-        completenessScore: nBest?.PronunciationAssessment?.CompletenessScore ?? null,
-        pronScore: nBest?.PronunciationAssessment?.PronScore ?? null,
+        accuracyScore: getScore(nBest, 'AccuracyScore'),
+        fluencyScore: getScore(nBest, 'FluencyScore'),
+        completenessScore: getScore(nBest, 'CompletenessScore'),
+        pronScore: getScore(nBest, 'PronScore'),
       },
       words,
       raw: result,
