@@ -2123,10 +2123,8 @@ export function PracticeScreen() {
     const isStrictCheck = isRunThroughRef.current ? true : settings.strictMode
     if (expectedLineRef.current && blob && blob.size > 1024) {
       try {
-        // Convert webm/opus to WAV — Azure PA needs WAV for pronunciation scores
-        const wavBlob = await convertBlobToWav(blob)
         const formData = new FormData()
-        formData.append('audio', wavBlob, 'audio.wav')
+        formData.append('audio', blob, 'audio.webm')
         formData.append('referenceText', expectedLineRef.current)
         const resp = await fetch('/api/pronunciation-assess', { method: 'POST', body: formData })
         if (resp.ok) {
