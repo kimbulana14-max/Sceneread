@@ -72,8 +72,14 @@ export async function POST(request: Request) {
 
     const result = await response.json()
 
-    // Extract the pronunciation assessment from the NBest results
+    // Debug: log the full raw response to see what Azure actually returns
     const nBest = result.NBest?.[0]
+    console.log('[Azure PA] contentType sent:', contentType, 'audioSize:', audioBuffer.byteLength, 'mimeType:', mimeType)
+    console.log('[Azure PA] RecognitionStatus:', result.RecognitionStatus)
+    console.log('[Azure PA] NBest[0] keys:', nBest ? Object.keys(nBest) : 'no nBest')
+    console.log('[Azure PA] NBest[0].PronunciationAssessment:', JSON.stringify(nBest?.PronunciationAssessment))
+    console.log('[Azure PA] First word raw:', JSON.stringify(nBest?.Words?.[0]))
+
     const words = nBest?.Words?.map((w: any) => ({
       word: w.Word,
       accuracyScore: w.PronunciationAssessment?.AccuracyScore ?? null,
@@ -90,7 +96,6 @@ export async function POST(request: Request) {
         pronScore: nBest?.PronunciationAssessment?.PronScore ?? null,
       },
       words,
-      // Include raw response for debugging
       raw: result,
     })
   } catch (error) {

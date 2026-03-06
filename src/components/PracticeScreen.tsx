@@ -2131,6 +2131,7 @@ export function PracticeScreen() {
         const resp = await fetch('/api/pronunciation-assess', { method: 'POST', body: formData })
         if (resp.ok) {
           const data = await resp.json()
+          console.log('[Azure PA] raw response:', JSON.stringify(data.raw))
           if (data.words && data.words.length > 0) {
             console.log('[Azure PA] words:', data.words.map((w: any) => `${w.word}(${w.errorType}:${w.accuracyScore})`).join(' '))
             console.log('[Azure PA] overall:', JSON.stringify(data.overall), 'deepgram:', JSON.stringify(deepgramSpoken))
