@@ -461,6 +461,14 @@ export function PracticeScreen() {
       const result = getSubsequenceWordMatch(expectedLineRef.current, fullText, characterNameSet)
       matchedIndicesRef.current = result.matchedIndices
       setMatchedWordCount(result.matchedCount)
+
+      // Auto-finish from partials: if all expected words matched, don't wait for committed
+      // (STT may revise/drop words on commit, causing false negatives)
+      const expectedWordCount = expectedLineRef.current.split(/\s+/).filter((w: string) => w.length > 0).length
+      if (result.matchedCount >= expectedWordCount && listeningRef.current) {
+        console.log('[STT] All words matched from partial, auto-finishing')
+        finishListeningRef.current()
+      }
     },
     onCommittedTranscript: (data) => {
       if (!listeningRef.current) return
@@ -693,6 +701,18 @@ export function PracticeScreen() {
       isPlayingRef.current = false
     }
   }, [])
+
+  // Auto-reconnect mic when returning from background (mobile PWA)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !micReady && isPlayingRef.current && learningMode !== 'listen') {
+        console.log('[STT] App returned to foreground - reconnecting mic...')
+        connectMic()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [micReady, learningMode])
   useEffect(() => { resetStats() }, [currentScript?.id])
   useEffect(() => {
     if (isPlaying && status === 'idle' && currentLine && !busyRef.current) {
@@ -2276,7 +2296,20 @@ export function PracticeScreen() {
     }
     
     // Azure PA is primary; checkAccuracy is fallback if Azure didn't run or failed
-    const result = azurePAResult ?? checkAccuracy(expectedLineRef.current, spoken, isStrictCheck, characterNameSet)
+    let result = azurePAResult ?? checkAccuracy(expectedLineRef.current, spoken, isStrictCheck, characterNameSet)
+
+    // TRUST REAL-TIME MATCHING: If subsequence matching showed all (or nearly all) expected words
+    // were spoken, override a failed accuracy check. STT can revise/drop words between partial and
+    // committed transcripts (e.g. dropping "Of" from "Of my sister? Yes, I am."), causing
+    // checkAccuracy to fail even though the user said everything correctly (words went green).
+    const expectedWordCount = expectedLineRef.current.split(/\s+/).filter((w: string) => w.length > 0).length
+    if (!result.isCorrect && expectedWordCount > 0) {
+      const matchedCoverage = matchedIndicesRef.current.size / expectedWordCount
+      if (matchedCoverage >= 0.9) {
+        console.log('[finishListening] Overriding accuracy with real-time match: matched', matchedIndicesRef.current.size, '/', expectedWordCount, '(', Math.round(matchedCoverage * 100), '%)')
+        result = { isCorrect: true, accuracy: Math.round(matchedCoverage * 100), missingWords: [], extraWords: [], wrongWords: [] }
+      }
+    }
     setTranscript(spoken)
     setMissingWords(result.missingWords)
     setWrongWords(result.wrongWords)
@@ -3043,15 +3076,22 @@ export function PracticeScreen() {
                 {/* Scene slug - prominent */}
                 <div className="text-sm font-semibold text-text tracking-wide">{getSceneSlug(currentSceneData)}</div>
                 
-                {/* Scene counter and stats */}
-                <div className="text-[11px] text-text-muted mt-0.5">
+                {/* Scene counter and stats - tap to restart from line 1 */}
+                <button
+                  onClick={() => { stopPlayback(); setCurrentLineIndex(0) }}
+                  className="text-[11px] text-text-muted mt-0.5 hover:text-accent transition-colors"
+                  title="Tap to go back to first line"
+                >
                   Scene {currentSceneIndex + 1} of {scriptScenes.length}
                   <span className="mx-1.5 opacity-40">·</span>
                   {playableLines.length} lines
                   {userLines.length > 0 && (
                     <span className="text-accent"> · {userLines.length} as {currentScript.user_role}</span>
                   )}
-                </div>
+                  {currentLineIndex > 0 && (
+                    <span className="ml-1.5 text-accent opacity-70">· Line {currentLineIndex + 1}</span>
+                  )}
+                </button>
               </motion.div>
               
               <button 
@@ -3535,6 +3575,17 @@ export function PracticeScreen() {
 
       {/* Lines */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2" onClick={() => setSelectedLineId(null)}>
+        {playableLines.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="text-text-muted text-sm mb-4">No lines in this scene yet</p>
+            <button
+              onClick={() => setEditModal({ type: 'line', data: { script_id: currentScript?.id, scene_id: currentSceneData?.id, sort_order: 1 }, mode: 'add' })}
+              className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors"
+            >
+              Add First Line
+            </button>
+          </div>
+        )}
         {playableLines.map((line, i) => {
           const isCurrent = i === currentLineIndex
           const isUser = line.is_user_line
@@ -4389,10 +4440,12 @@ export function PracticeScreen() {
 
       {/* Skip controls */}
       <div className="fixed bottom-[88px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-20">
-        <button 
-          onClick={() => { stopPlayback(); if (currentLineIndex > 0) setCurrentLineIndex(currentLineIndex - 1) }} 
-          disabled={currentLineIndex === 0} 
+        <button
+          onClick={() => { stopPlayback(); if (currentLineIndex > 0) setCurrentLineIndex(currentLineIndex - 1) }}
+          onDoubleClick={() => { stopPlayback(); setCurrentLineIndex(0); setCurrentSceneIndex(0) }}
+          disabled={currentLineIndex === 0}
           className="w-9 h-9 rounded-full bg-bg-surface/80 backdrop-blur flex items-center justify-center disabled:opacity-30 text-text-muted"
+          title="Tap: previous line. Double-tap: back to start"
         >
           <IconSkipBack size={16} />
         </button>
