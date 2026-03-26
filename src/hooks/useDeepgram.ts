@@ -159,8 +159,8 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
       channels: '1',
       interim_results: 'true',
       punctuate: 'true',
-      endpointing: '300', // 300ms silence = end of utterance
-      utterance_end_ms: '1500', // Utterance end after 1.5s silence
+      endpointing: '500', // 500ms silence = end of utterance (was 300ms — too aggressive, split mid-sentence pauses)
+      utterance_end_ms: '2000', // Utterance end after 2s silence (was 1.5s)
       vad_events: 'true',
       smart_format: 'true',
     })
@@ -188,7 +188,7 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false, // Disabled: was suppressing quiet/soft voices
           autoGainControl: true,
           sampleRate: 16000,
         }

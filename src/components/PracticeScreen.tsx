@@ -1880,7 +1880,7 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        const timeout = coverage >= 0.95 ? 1200 : Math.max(2000, settings.silenceDuration)
+        const timeout = coverage >= 0.95 ? 1800 : Math.max(2500, settings.silenceDuration)
         if (silenceMs > timeout) {
           console.log('[Silence] Build mode - evaluating after', silenceMs, 'ms (coverage:', Math.round(coverage * 100) + '%, timeout:', timeout + 'ms)')
           finishListeningRef.current();
@@ -1994,8 +1994,8 @@ export function PracticeScreen() {
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
         // Short timeout when user has said nearly everything (95%+)
-        // 1200ms is enough for Deepgram finals to arrive
-        const timeout = coverage >= 0.95 ? 1200 : Math.max(2000, settings.silenceDuration)
+        // 1800ms gives Deepgram finals time to arrive after endpointing (was 1200ms)
+        const timeout = coverage >= 0.95 ? 1800 : Math.max(2500, settings.silenceDuration)
         // Log every second so we can see the countdown
         if (silenceMs > 1000 && Math.floor(silenceMs / 1000) !== Math.floor((silenceMs - 250) / 1000)) {
           console.log('[Silence]', Math.round(silenceMs/1000) + 's /', (timeout/1000) + 's timeout | spoken:', spokenWords + '/' + expectedWords, '(' + Math.round(coverage * 100) + '%) |', JSON.stringify(hasTranscript))
@@ -2059,7 +2059,7 @@ export function PracticeScreen() {
         const expectedWords = expectedLineRef.current.split(/\s+/).filter(w => w.length > 0).length
         const spokenWords = hasTranscript.split(/\s+/).filter(w => w.length > 0).length
         const coverage = spokenWords / Math.max(1, expectedWords)
-        const minSilence = 1500
+        const minSilence = 1800
         const timeout = coverage >= 0.95 ? Math.max(minSilence, settings.silenceDuration) : 2500
         if (silenceMs > timeout) {
           finishListeningRef.current()
@@ -2712,8 +2712,18 @@ export function PracticeScreen() {
   const handleEditLineDelete = async (lineId: string) => {
     const ok = await deleteLine(lineId)
     if (ok) {
-      useStore.getState().setLines(lines.filter(l => l.id !== lineId))
+      const updatedLines = lines.filter(l => l.id !== lineId)
+      useStore.getState().setLines(updatedLines)
       if (currentLineIndex >= sceneLines.length - 1) setCurrentLineIndex(Math.max(0, currentLineIndex - 1))
+      // Update total_lines in store and database
+      if (currentScript) {
+        const newTotal = updatedLines.length
+        const updatedScript = { ...currentScript, total_lines: newTotal }
+        useStore.getState().setCurrentScript(updatedScript)
+        const { scripts } = useStore.getState()
+        useStore.getState().setScripts(scripts.map(s => s.id === currentScript.id ? { ...s, total_lines: newTotal } : s))
+        updateScript(currentScript.id, { total_lines: newTotal })
+      }
     }
   }
 
@@ -4491,18 +4501,38 @@ export function PracticeScreen() {
             useStore.getState().setCurrentScript({ ...currentScript!, ...data }) 
           } 
         }} 
-        onDelete={async (id) => { 
+        onDelete={async (id) => {
           const ok = await deleteLine(id)
-          if (ok) { 
-            useStore.getState().setLines(lines.filter(l => l.id !== id))
-            if (currentLineIndex >= sceneLines.length - 1) setCurrentLineIndex(Math.max(0, currentLineIndex - 1)) 
-          } 
+          if (ok) {
+            const updatedLines = lines.filter(l => l.id !== id)
+            useStore.getState().setLines(updatedLines)
+            if (currentLineIndex >= sceneLines.length - 1) setCurrentLineIndex(Math.max(0, currentLineIndex - 1))
+            // Update total_lines in store and database
+            if (currentScript) {
+              const newTotal = updatedLines.length
+              useStore.getState().setCurrentScript({ ...currentScript, total_lines: newTotal })
+              const { scripts } = useStore.getState()
+              useStore.getState().setScripts(scripts.map(s => s.id === currentScript.id ? { ...s, total_lines: newTotal } : s))
+              updateScript(currentScript.id, { total_lines: newTotal })
+            }
+          }
         }} 
         onAddLine={async (afterId, data) => {
           const { afterLineId, ...lineData } = data // Strip non-DB field
           const sortOrder = afterId ? getInsertSortOrder(afterId) : (data.sort_order ?? 1)
           const newLine = await addLine({ ...lineData, sort_order: sortOrder })
-          if (newLine) useStore.getState().setLines([...lines, newLine].sort((a, b) => a.sort_order - b.sort_order))
+          if (newLine) {
+            const updatedLines = [...lines, newLine].sort((a, b) => a.sort_order - b.sort_order)
+            useStore.getState().setLines(updatedLines)
+            // Update total_lines in store and database
+            if (currentScript) {
+              const newTotal = updatedLines.length
+              useStore.getState().setCurrentScript({ ...currentScript, total_lines: newTotal })
+              const { scripts } = useStore.getState()
+              useStore.getState().setScripts(scripts.map(s => s.id === currentScript.id ? { ...s, total_lines: newTotal } : s))
+              updateScript(currentScript.id, { total_lines: newTotal })
+            }
+          }
         }} 
       />
     </div>
