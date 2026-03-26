@@ -722,15 +722,13 @@ export function PracticeScreen() {
       }
       if (learningMode === 'listen') {
         playCurrentLine()
-      } else if (micReady) {
-        // Mic is ready — play any line
-        playCurrentLine()
-      } else if (!currentLine.is_user_line) {
-        // Partner/narrator lines don't need mic — play immediately
-        // Mic will connect in parallel via the connectMic effect
+      } else {
+        // Play all lines immediately — partner lines don't need mic,
+        // and user lines handle mic connection inside startListening()
+        // with automatic reconnect. Don't gate on micReady or the scene
+        // stalls completely if Deepgram connection fails.
         playCurrentLine()
       }
-      // User lines wait for micReady (connectMic effect handles connection)
     }
   }, [isPlaying, micReady, status, currentLineIndex, currentLine?.id, learningMode])
 
