@@ -720,8 +720,17 @@ export function PracticeScreen() {
       if (settings.randomOrder && learningMode !== 'listen' && randomQueueRef.current.length === 0) {
         buildRandomQueue()
       }
-      if (learningMode === 'listen') playCurrentLine();
-      else if (micReady) playCurrentLine()
+      if (learningMode === 'listen') {
+        playCurrentLine()
+      } else if (micReady) {
+        // Mic is ready — play any line
+        playCurrentLine()
+      } else if (!currentLine.is_user_line) {
+        // Partner/narrator lines don't need mic — play immediately
+        // Mic will connect in parallel via the connectMic effect
+        playCurrentLine()
+      }
+      // User lines wait for micReady (connectMic effect handles connection)
     }
   }, [isPlaying, micReady, status, currentLineIndex, currentLine?.id, learningMode])
 
@@ -741,7 +750,7 @@ export function PracticeScreen() {
   // Helper: check if this async chain is still valid (component hasn't remounted)
   const isStaleMount = (nonce: number) => nonce !== mountNonceRef.current
 
-  const connectMic = async () => {
+  const connectMic = async (retryCount = 0) => {
     setStatus('connecting')
     try {
       console.log('[STT] Starting Deepgram session (audio paused until listening)...')
@@ -750,15 +759,22 @@ export function PracticeScreen() {
       const keyterms = Array.from(characterNameSet)
       const success = await stt.startSession(keyterms)
       if (!success) {
-        throw new Error('Failed to connect')
+        throw new Error('Failed to connect to Deepgram')
       }
 
       console.log('[STT] Deepgram session connected (audio paused)')
 
     } catch (e) {
       console.error('[STT] Failed to connect:', e)
+      // Retry up to 2 times with increasing delay
+      if (retryCount < 2 && isPlayingRef.current) {
+        console.log(`[STT] Retrying mic connection (attempt ${retryCount + 2}/3)...`)
+        await new Promise(r => setTimeout(r, 1000 * (retryCount + 1)))
+        return connectMic(retryCount + 1)
+      }
+      // After retries, keep playing but without mic — partner lines still work
+      console.error('[STT] Mic connection failed after retries. Partner lines will still play.')
       setStatus('idle')
-      setIsPlaying(false)
     }
   }
 
