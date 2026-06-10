@@ -568,6 +568,35 @@ describe('getWordByWordResults', () => {
 // Edge cases and regression tests
 // ============================================================================
 
+// ============================================================================
+// Double Metaphone phonetic matching
+// ============================================================================
+
+describe('phonetic matching (Double Metaphone)', () => {
+  it('folds homophones the STT may transcribe differently: scene / seen', () => {
+    const r = checkAccuracy('I saw the scene clearly', 'I saw the seen clearly')
+    expect(r.isCorrect).toBe(true)
+  })
+
+  it('folds knight / night', () => {
+    const r = checkAccuracy('the lonely knight rides', 'the lonely night rides')
+    expect(r.isCorrect).toBe(true)
+  })
+
+  it('does NOT collapse the filler "um" into "I am" (vowel-fragment guard)', () => {
+    // Regression: Double Metaphone encodes um / am / "i"+"am" all to "AM".
+    // The >=4 length guard must stop "um" matching the words "I am".
+    const r = checkAccuracy('I am fine', 'um I am fine')
+    expect(r.accuracy).toBe(100)
+    expect(r.isCorrect).toBe(true)
+  })
+
+  it('keeps distinct-sounding words apart: old != young, love != hate', () => {
+    expect(checkAccuracy('the old man', 'the young man').isCorrect).toBe(false)
+    expect(checkAccuracy('I love you', 'I hate you').isCorrect).toBe(false)
+  })
+})
+
 describe('edge cases', () => {
   it('handles empty expected and spoken', () => {
     const r = checkAccuracy('', '')

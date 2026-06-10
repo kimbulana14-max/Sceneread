@@ -9,8 +9,9 @@ out/
 next-env.d.ts
 tsconfig.tsbuildinfo
 
-# env
-.env*.local
+# env (broad — also covers .env.local.full, .env.local.bak, etc. which hold secrets)
+.env*
+!.env.example
 
 # vercel
 .vercel

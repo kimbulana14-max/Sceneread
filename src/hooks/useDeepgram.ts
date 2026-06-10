@@ -25,6 +25,29 @@ interface UseDeepgramOptions {
 
 const DEEPGRAM_API_KEY = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY || ''
 
+// Deepgram is told the stream is 16 kHz (sample_rate=16000). Desktop Chrome
+// honors `new AudioContext({ sampleRate: 16000 })`, but iOS Safari (and some
+// Android browsers) ignore the hint and run the context at 44.1/48 kHz. If we
+// then ship those samples to Deepgram still labelled 16 kHz, the audio is
+// pitched/sped up and recognition turns to garbage — a phone-only "every line
+// is wrong" failure. This guarded linear resampler downsamples to a true
+// 16 kHz only when the context's real rate differs, so the working desktop
+// path is a zero-cost no-op.
+function downsampleTo16k(input: Float32Array, inRate: number): Float32Array {
+  if (inRate === 16000) return input
+  const ratio = inRate / 16000
+  const outLength = Math.max(1, Math.round(input.length / ratio))
+  const output = new Float32Array(outLength)
+  for (let i = 0; i < outLength; i++) {
+    const srcPos = i * ratio
+    const i0 = Math.floor(srcPos)
+    const i1 = Math.min(i0 + 1, input.length - 1)
+    const frac = srcPos - i0
+    output[i] = input[i0] * (1 - frac) + input[i1] * frac
+  }
+  return output
+}
+
 export function useDeepgram(options: UseDeepgramOptions = {}) {
   const {
     onPartialTranscript,
@@ -134,10 +157,14 @@ export function useDeepgram(options: UseDeepgramOptions = {}) {
       if (!sendingAudioRef.current) return
       if (socket.readyState !== WebSocket.OPEN) return
 
+      // Resample to a true 16 kHz when the device ran the context at another
+      // rate (notably iOS Safari) — no-op when it already gave us 16 kHz.
+      const samples = downsampleTo16k(inputData, audioContext.sampleRate)
+
       // Convert float32 to int16 PCM
-      const pcm16 = new Int16Array(inputData.length)
-      for (let i = 0; i < inputData.length; i++) {
-        const s = Math.max(-1, Math.min(1, inputData[i]))
+      const pcm16 = new Int16Array(samples.length)
+      for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]))
         pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
       }
 

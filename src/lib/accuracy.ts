@@ -4,6 +4,8 @@
  * Optimized for transcription errors, accents, and name variations
  */
 
+import { doubleMetaphone } from 'double-metaphone'
+
 // ============================================================================
 // JARO-WINKLER SIMILARITY
 // ============================================================================
@@ -89,31 +91,29 @@ function levenshtein(a: string, b: string): number {
 }
 
 // ============================================================================
-// SOUNDEX
+// PHONETIC ENCODING (Double Metaphone)
 // ============================================================================
 
-function soundex(word: string): string {
-  if (!word) return ''
-  const upper = word.toUpperCase()
-  const first = upper[0]
-  const map: Record<string, string> = {
-    B: '1', F: '1', P: '1', V: '1',
-    C: '2', G: '2', J: '2', K: '2', Q: '2', S: '2', X: '2', Z: '2',
-    D: '3', T: '3',
-    L: '4',
-    M: '5', N: '5',
-    R: '6',
-  }
-  let code = first
-  let prev = map[first] || '0'
-  for (let i = 1; i < upper.length && code.length < 4; i++) {
-    const digit = map[upper[i]]
-    if (digit && digit !== prev) {
-      code += digit
+/**
+ * True if two words share a phonetic code under Double Metaphone.
+ * Double Metaphone returns [primary, secondary] codes; we treat the words as
+ * homophones if ANY non-empty code from one matches ANY non-empty code from the
+ * other. This folds "scene"/"seen", "knight"/"night", "right"/"write" together
+ * while keeping distinct-sounding words (old/young, love/hate) apart — strictly
+ * better than Soundex for the accents/STT-artifact cases actors hit.
+ */
+function phoneticMatch(a: string, b: string): boolean {
+  const [ap, as] = doubleMetaphone(a)
+  const [bp, bs] = doubleMetaphone(b)
+  const aCodes = [ap, as]
+  const bCodes = [bp, bs]
+  for (const x of aCodes) {
+    if (!x) continue
+    for (const y of bCodes) {
+      if (y && x === y) return true
     }
-    prev = digit || '0'
   }
-  return (code + '000').slice(0, 4)
+  return false
 }
 
 // ============================================================================
@@ -335,10 +335,13 @@ function wordsMatch(
     if (levenshtein(expected, spoken) <= 2) return true
   }
 
-  // Phonetic fallback (Soundex) for words >= 2 chars
-  // Catches homophones: "scene"/"seen", "knight"/"night"
-  if (expected.length >= 2 && spoken.length >= 2) {
-    if (soundex(expected) === soundex(spoken)) return true
+  // Phonetic fallback (Double Metaphone) for real-length words (>= 4 chars).
+  // Catches homophones: "scene"/"seen", "knight"/"night", "right"/"write".
+  // The >=4 guard avoids false positives on short vowel-heavy fragments —
+  // Double Metaphone collapses "um", "am", and a joined "i"+"am" all to "AM",
+  // which would wrongly match a filler "um" against the words "I am".
+  if (expected.length >= 4 && spoken.length >= 4) {
+    if (phoneticMatch(expected, spoken)) return true
   }
 
   return false

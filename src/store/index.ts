@@ -36,6 +36,16 @@ export interface PracticeSettings {
   randomOrder: boolean // Shuffle user lines for memorization training
   partnerSpeedVariation: boolean // Randomly vary AI partner's speaking speed
   colorTheme: 'dark' | 'light'
+  // Optional Azure pronunciation-quality coaching. OFF by default and NEVER used
+  // to decide if a line is correct — the line verdict is always the local
+  // word-content matcher (checkAccuracy). This only surfaces a pronunciation
+  // score/feedback panel when explicitly enabled.
+  pronunciationFeedback: boolean
+  // On-device speech recognition backup. When the Deepgram cloud stream yields
+  // nothing (dropped socket / flaky mobile network), transcribe the recorded
+  // audio locally with an on-device model so a connection blip no longer marks
+  // a correctly-spoken line wrong. Lazy-loads the model on first use.
+  onDeviceFallback: boolean
 }
 
 // === PER-SCRIPT PRACTICE STATE ===
@@ -218,6 +228,8 @@ export const defaultSettings: PracticeSettings = {
   randomOrder: false,
   partnerSpeedVariation: false,
   colorTheme: 'dark',
+  pronunciationFeedback: false,
+  onDeviceFallback: true,
 }
 
 const defaultScriptState = (scriptId: string): ScriptPracticeState => ({

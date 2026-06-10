@@ -838,6 +838,18 @@ export function ProfileScreen() {
                         value={settings.strictMode}
                         onChange={(v) => updateSettings({ strictMode: v })}
                       />
+                      <ToggleSetting
+                        label="Offline Recognition Backup"
+                        description="If the live cloud transcriber drops out, recognise your line on-device so a network blip doesn't mark it wrong (downloads a small model on first use)"
+                        value={settings.onDeviceFallback}
+                        onChange={(v) => updateSettings({ onDeviceFallback: v })}
+                      />
+                      <ToggleSetting
+                        label="Pronunciation Feedback"
+                        description="Show an optional pronunciation-quality score after each line. Never affects whether a line counts as correct"
+                        value={settings.pronunciationFeedback}
+                        onChange={(v) => updateSettings({ pronunciationFeedback: v })}
+                      />
                     </div>
 
                     {/* Retry Behaviour */}

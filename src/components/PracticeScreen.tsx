@@ -9,6 +9,7 @@ import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMic, IconCheck,
 import { EditModal, updateLine, updateCharacter, updateScript, deleteLine, addLine } from './EditModal'
 import { supabase, getAuthHeaders } from '@/lib/supabase'
 import { useDeepgram } from '@/hooks/useDeepgram'
+import { transcribeBlobOnDevice, preloadOnDeviceSTT } from '@/lib/onDeviceSTT'
 import { triggerAchievementCheck } from '@/hooks/useAchievements'
 
 import { audioManager, playTone as audioPlayTone } from '@/lib/audioManager'
@@ -501,10 +502,14 @@ export function PracticeScreen() {
     },
     onError: (error) => {
       console.error('[STT] Deepgram error:', error)
+      // Cloud STT is in trouble — warm the on-device backup so it's ready if
+      // the next line comes back with no transcript.
+      if (settings.onDeviceFallback) preloadOnDeviceSTT()
     },
     onDisconnect: () => {
       console.log('[STT] Deepgram disconnected')
       setMicReady(false)
+      if (settings.onDeviceFallback) preloadOnDeviceSTT()
       if (isPlayingRef.current && reconnectRef.current) {
         console.log('[STT] Reconnecting due to unexpected disconnect...')
         setTimeout(() => {
@@ -2105,15 +2110,43 @@ export function PracticeScreen() {
       setHasRecording(false)
     }
 
-    // Azure PA is the primary accuracy authority — runs on every line with audio
+    // ── VERDICT TRANSCRIPT ───────────────────────────────────────────────
+    // The Deepgram streaming transcript is the single source of truth for the
+    // line verdict, evaluated by the local content matcher (checkAccuracy).
+    // We deliberately do NOT let any cloud pronunciation scorer overwrite the
+    // transcript or decide correctness. This fixes the old "constantly says I'm
+    // wrong" failure, where Azure Pronunciation Assessment returned null/low
+    // scores and gated the verdict even when every word was actually correct.
     let spoken = deepgramSpoken
-    let azurePAResult: { isCorrect: boolean; accuracy: number; missingWords: string[]; extraWords: string[]; wrongWords: string[]; wordResults: Array<'correct' | 'wrong' | 'missing'> } | null = null
     const isStrictCheck = isRunThroughRef.current ? true : settings.strictMode
 
     // Show "checking" state immediately so user knows mic is off and we're processing
     setStatus('checking')
 
-    if (expectedLineRef.current && blob && blob.size > 1024) {
+    // ── ON-DEVICE RECOGNITION BACKUP ─────────────────────────────────────
+    // If the live cloud stream gave us nothing but we DID capture audio, the
+    // socket likely dropped (common on flaky mobile networks). Rather than
+    // auto-failing a line the user may have said perfectly, transcribe the
+    // recorded clip locally with an on-device model and use that. Fails soft:
+    // returns '' on any error, preserving the existing empty-transcript path.
+    if (!spoken && settings.onDeviceFallback && blob && blob.size > 1024) {
+      try {
+        const local = await transcribeBlobOnDevice(blob)
+        if (local) {
+          spoken = local
+          setTranscript(spoken)
+          transcriptRef.current = spoken
+          console.log('[finishListening] on-device backup transcript:', JSON.stringify(local))
+        }
+      } catch (e) {
+        console.warn('[finishListening] on-device backup failed:', e)
+      }
+    }
+
+    // OPTIONAL pronunciation coaching (off by default). When enabled, Azure PA
+    // runs purely to populate the pronunciation feedback panel — it NEVER sets
+    // the line verdict and NEVER replaces the transcript above.
+    if (settings.pronunciationFeedback && expectedLineRef.current && blob && blob.size > 1024) {
       try {
         const formData = new FormData()
         formData.append('audio', blob, 'audio.webm')
@@ -2121,78 +2154,26 @@ export function PracticeScreen() {
         const resp = await fetch('/api/pronunciation-assess', { method: 'POST', body: formData })
         if (resp.ok) {
           const data = await resp.json()
-          console.log('[Azure PA] raw response:', JSON.stringify(data.raw))
           if (data.words && data.words.length > 0) {
-            console.log('[Azure PA] words:', data.words.map((w: any) => `${w.word}(${w.errorType}:${w.accuracyScore})`).join(' '))
-            console.log('[Azure PA] overall:', JSON.stringify(data.overall), 'deepgram:', JSON.stringify(deepgramSpoken))
-
-            // Use Azure's displayText as the transcript
-            if (data.displayText) {
-              spoken = data.displayText
-              setTranscript(spoken)
-              transcriptRef.current = spoken
-            }
-
-            // Build accuracy result from Azure PA per-word data
             const azureWords: Array<{ word: string; errorType: string; accuracyScore: number }> = data.words
-            const missingWords: string[] = []
-            const wrongWords: string[] = []
-            const wordResults: Array<'correct' | 'wrong' | 'missing'> = []
-
-            for (const w of azureWords) {
-              if (w.errorType === 'None') {
-                wordResults.push('correct')
-              } else if (w.errorType === 'Omission') {
-                wordResults.push('missing')
-                missingWords.push(w.word)
-              } else if (w.errorType === 'Insertion') {
-                // Insertions are extra words the user said — skip from word results
-              } else {
-                // Mispronunciation or other error
-                wordResults.push('wrong')
-                wrongWords.push(`"${w.word}"`)
-              }
-            }
-
-            const overallAccuracy = data.overall?.accuracyScore ?? null
-            const completeness = data.overall?.completenessScore ?? null
-            const pronScore = data.overall?.pronScore ?? null
-
-            // If Azure returned null scores (webm format limitation), fall back to word-level verdicts
-            // All words recognized correctly (no wrong/missing) = correct
-            const scoresAvailable = pronScore !== null
-            const minScore = isStrictCheck ? 85 : 70
-            const isCorrect = scoresAvailable
-              ? (pronScore >= minScore && wrongWords.length === 0)
-              : (wrongWords.length === 0 && missingWords.length === 0)
-
-            // If scores are null, compute accuracy from word results
-            const computedAccuracy = scoresAvailable
-              ? Math.round(overallAccuracy!)
-              : Math.round((wordResults.filter(r => r === 'correct').length / Math.max(1, wordResults.length)) * 100)
-
-            azurePAResult = {
-              isCorrect,
-              accuracy: computedAccuracy,
-              missingWords,
-              extraWords: [],
-              wrongWords,
-              wordResults,
-            }
-
-            console.log('[Azure PA] verdict:', isCorrect ? 'CORRECT' : 'WRONG', 'pronScore:', pronScore, 'accuracy:', overallAccuracy, 'completeness:', completeness)
-
             setAzureDebug({
               referenceText: expectedLineRef.current,
               displayText: data.displayText || '',
               words: azureWords,
-              overall: { accuracyScore: overallAccuracy ?? 0, fluencyScore: data.overall?.fluencyScore ?? 0, completenessScore: completeness ?? 0, pronScore: pronScore ?? 0 },
+              overall: {
+                accuracyScore: data.overall?.accuracyScore ?? 0,
+                fluencyScore: data.overall?.fluencyScore ?? 0,
+                completenessScore: data.overall?.completenessScore ?? 0,
+                pronScore: data.overall?.pronScore ?? 0,
+              },
               pronUsed: true,
             })
+          } else {
+            setAzureDebug(null)
           }
         }
       } catch (e) {
-        console.warn('[Azure PA] Failed, falling back to Deepgram + checkAccuracy:', e)
+        console.warn('[Pronunciation] feedback unavailable:', e)
         setAzureDebug(null)
       }
     } else {
@@ -2309,13 +2290,15 @@ export function PracticeScreen() {
       return
     }
     
-    // Azure PA is primary; checkAccuracy is fallback if Azure didn't run or failed
-    let result = azurePAResult ?? checkAccuracy(expectedLineRef.current, spoken, isStrictCheck, characterNameSet)
+    // Local content matcher is the single verdict authority (engine-agnostic);
+    // Azure PA no longer gates correctness.
+    let result = checkAccuracy(expectedLineRef.current, spoken, isStrictCheck, characterNameSet)
 
     // TRUST REAL-TIME MATCHING: If subsequence matching showed all (or nearly all) expected words
     // were spoken, override a failed accuracy check. STT can revise/drop words between partial and
     // committed transcripts (e.g. dropping "Of" from "Of my sister? Yes, I am."), causing
     // checkAccuracy to fail even though the user said everything correctly (words went green).
+    // (Skipped when the on-device backup supplied the transcript — live coverage won't reflect it.)
     const expectedWordCount = expectedLineRef.current.split(/\s+/).filter((w: string) => w.length > 0).length
     if (!result.isCorrect && expectedWordCount > 0) {
       const matchedCoverage = matchedIndicesRef.current.size / expectedWordCount
@@ -2478,13 +2461,9 @@ export function PracticeScreen() {
       setStats(s => ({ ...s, wrong: s.wrong + 1 }))
       if (scriptId) recordAttempt(scriptId, false)
       
-      // Get word-by-word results for visual feedback (use Azure PA word results if available)
-      if (azurePAResult?.wordResults) {
-        setWordResults(azurePAResult.wordResults)
-      } else {
-        const wordByWord = getWordByWordResults(expectedLineRef.current, spoken, characterNameSet)
-        setWordResults(wordByWord.results)
-      }
+      // Get word-by-word results for visual feedback from the local matcher
+      const wordByWord = getWordByWordResults(expectedLineRef.current, spoken, characterNameSet)
+      setWordResults(wordByWord.results)
       
       // Show error popup with what they got wrong
       const errorMsg = result.wrongWords.length > 0 
