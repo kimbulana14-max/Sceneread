@@ -6,6 +6,7 @@ import { useStore } from '@/store'
 import { supabase, getAuthHeaders, Script, Character, Folder, ELEVENLABS_VOICES } from '@/lib/supabase'
 import { api } from '@/lib/api'
 import { getPDFInfo, extractPagesFromPDF, extractAllPagesFromPDF, getPDFPreview, extractScenesByIds, extractPagesAsPDF, PDFInfo, PDFPreview, DetectedScene } from '@/lib/pdfExtractor'
+import { isExtractableDoc, extractTextFromDoc } from '@/lib/docExtractor'
 import PDFVisualPreview from './PDFVisualPreview'
 import { Card, Badge, Button, EmptyState, Spinner } from './ui'
 import { IconSearch, IconUpload, IconLibrary } from './icons'
@@ -1170,6 +1171,23 @@ function ImportModal({ onClose, onSuccess, onStartPractice }: {
           textToSend = ''
           fileToSend = selectedFile
         }
+      } else if (selectedFile && isExtractableDoc(selectedFile)) {
+        // Word/text/screenwriting docs: extract text client-side and send it via
+        // the rawText path (n8n has no reader for these formats).
+        setProgress('Reading document...')
+        const extracted = await extractTextFromDoc(selectedFile)
+        if (!extracted || extracted.trim().length < 5) {
+          setError('Could not read any text from this document. Try a PDF, or paste the text directly.')
+          setStep('choose')
+          return
+        }
+        textToSend = extracted
+        fileToSend = undefined // send as rawText, not as a binary file
+        addDebug(`Extracted ${extracted.length} chars from ${selectedFile.name}`)
+      } else if (selectedFile && selectedFile.name.toLowerCase().endsWith('.doc')) {
+        setError("Legacy .doc files aren't supported. Save it as .docx or PDF, or paste the text.")
+        setStep('choose')
+        return
       }
 
       // Fire the import request and use returned scriptId
