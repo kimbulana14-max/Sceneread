@@ -1,0 +1,261 @@
+{
+  "inputType": "pdf",
+  "textContent": "",
+  "userId": "56c6a737-b6c9-4d9a-9113-910b40a6fa0b",
+  "userRole": "CORRIE",
+  "userGender": "female",
+  "title": "The twelve",
+  "fileName": "The-Twelve-Corrie_pages_1-2.pdf",
+  "scriptType": "short_film_audition",
+  "accentHint": "australian",
+  "structure": {
+    "title": "",
+    "detected_accent": "australian",
+    "season": null,
+    "episode_number": null,
+    "episode_title": null,
+    "scene_description": "A tense conversation between Alexi and Corrie about guilt, crime, and a tragic event.",
+    "characters": [
+      {
+        "name": "CORRIE",
+        "gender": "female",
+        "is_user_character": true
+      },
+      {
+        "name": "ALEXI",
+        "gender": "unknown",
+        "is_user_character": false
+      },
+      {
+        "name": "NARRATOR",
+        "gender": "unknown",
+        "is_user_character": false
+      }
+    ],
+    "scenes": [
+      {
+        "scene_number": 1,
+        "int_ext": null,
+        "location": "",
+        "time_of_day": null
+      }
+    ],
+    "lines": [
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "Smells amazing. Thankyou.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 1
+      },
+      {
+        "scene_number": 1,
+        "character": "CORRIE",
+        "content": "Yeah, I mean. All I can really smell is the stench of your rarefied guilty conscience.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 2
+      },
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "Wow, can we not? I'm just, I'm tired. I'm not really in the mood for your theories on crime and punishment.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 3
+      },
+      {
+        "scene_number": 1,
+        "character": "NARRATOR",
+        "content": "Corrie throws something",
+        "parenthetical": null,
+        "type": "action",
+        "sort_order": 4
+      },
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "Jesus, what the fuck was that?",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 5
+      },
+      {
+        "scene_number": 1,
+        "character": "CORRIE",
+        "content": "Just getting your attention. Look, you didn't play by the rules, and someone got hurt. But he wasn't playing by the rules either. Ok, if he wasn't illegal, you would have taken him to hospital.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 6
+      },
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "Look I appreciate what you're trying to do, but he's dead. I have to live with that for the rest of my life. And I know you've been through some shit. I get it. But you were not to blame. I am.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 7
+      },
+      {
+        "scene_number": 1,
+        "character": "CORRIE",
+        "content": "You think you're the only one with guilty secrets? That story that I tell about my parents? Even I've started to believe it.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 8
+      },
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "What do you mean?",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 9
+      },
+      {
+        "scene_number": 1,
+        "character": "CORRIE",
+        "content": "I was having a shitty week, and I wanted to blow off some steam, so I got in touch with some random dealer. He turned up. I got in the car. We drove around the block a few times. Got chatting. Did a couple of bumps together. But I wasn't thinking straight. My parents were away and I invited him inside. He must've seen the house and seen how easy it was to get in. He cased the place and came back two weeks later. I brought him to this house, Alexi. And he tried to rob us and my dad caught him and then he killed both of my parents.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 10
+      },
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "How'd you know it was him?",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 11
+      },
+      {
+        "scene_number": 1,
+        "character": "CORRIE",
+        "content": "The police identified fingerprints and then they showed me a photo. The guy pleaded guilty and the case never went to trial and he didn't mention me, either. Must be some kind of drug dealer code. I've never told anyone.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 12
+      },
+      {
+        "scene_number": 1,
+        "character": "ALEXI",
+        "content": "I don't know what to say.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 13
+      },
+      {
+        "scene_number": 1,
+        "character": "CORRIE",
+        "content": "Nothing. There's nothing to say.",
+        "parenthetical": null,
+        "type": "dialogue",
+        "sort_order": 14
+      }
+    ]
+  },
+  "linesForEmotion": [
+    {
+      "idx": 0,
+      "char": "ALEXI",
+      "text": "Smells amazing. Thankyou.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 1,
+      "char": "CORRIE",
+      "text": "Yeah, I mean. All I can really smell is the stench of your rarefied guilty conscience.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 2,
+      "char": "ALEXI",
+      "text": "Wow, can we not? I'm just, I'm tired. I'm not really in the mood for your theories on crime and punishment.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 3,
+      "char": "NARRATOR",
+      "text": "Corrie throws something",
+      "type": "action"
+    },
+    {
+      "idx": 4,
+      "char": "ALEXI",
+      "text": "Jesus, what the fuck was that?",
+      "type": "dialogue"
+    },
+    {
+      "idx": 5,
+      "char": "CORRIE",
+      "text": "Just getting your attention. Look, you didn't play by the rules, and someone got hurt. But he wasn't playing by the rules either. Ok, if he wasn't illegal, you would have taken him to hospital.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 6,
+      "char": "ALEXI",
+      "text": "Look I appreciate what you're trying to do, but he's dead. I have to live with that for the rest of my life. And I know you've been through some shit. I get it. But you were not to blame. I am.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 7,
+      "char": "CORRIE",
+      "text": "You think you're the only one with guilty secrets? That story that I tell about my parents? Even I've started to believe it.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 8,
+      "char": "ALEXI",
+      "text": "What do you mean?",
+      "type": "dialogue"
+    },
+    {
+      "idx": 9,
+      "char": "CORRIE",
+      "text": "I was having a shitty week, and I wanted to blow off some steam, so I got in touch with some random dealer. He turned up. I got in the car. We drove around the block a few times. Got chatting. Did a couple of bumps together. But I wasn't thinking straight. My parents were away and I invited him inside. He must've seen the house and seen how easy it was to get in. He cased the place and came back two weeks later. I brought him to this house, Alexi. And he tried to rob us and my dad caught him and then he killed both of my parents.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 10,
+      "char": "ALEXI",
+      "text": "How'd you know it was him?",
+      "type": "dialogue"
+    },
+    {
+      "idx": 11,
+      "char": "CORRIE",
+      "text": "The police identified fingerprints and then they showed me a photo. The guy pleaded guilty and the case never went to trial and he didn't mention me, either. Must be some kind of drug dealer code. I've never told anyone.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 12,
+      "char": "ALEXI",
+      "text": "I don't know what to say.",
+      "type": "dialogue"
+    },
+    {
+      "idx": 13,
+      "char": "CORRIE",
+      "text": "Nothing. There's nothing to say.",
+      "type": "dialogue"
+    }
+  ],
+  "characters": [
+    {
+      "name": "CORRIE",
+      "gender": "female",
+      "is_user_character": true
+    },
+    {
+      "name": "ALEXI",
+      "gender": "unknown",
+      "is_user_character": false
+    },
+    {
+      "name": "NARRATOR",
+      "gender": "unknown",
+      "is_user_character": false
+    }
+  ]
+}

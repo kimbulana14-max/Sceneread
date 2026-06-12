@@ -19,3 +19,11 @@ tsconfig.tsbuildinfo
 # misc
 .DS_Store
 *.tsbuildinfo
+
+# n8n workflow exports with embedded API keys (keep local, never commit)
+n8n_wf.json
+n8n_wf_current.json
+n8n_workflow_backup.json
+n8n_workflow_fixed.json
+n8n_workflow_put.json
+n8n_workflow_put2.json
